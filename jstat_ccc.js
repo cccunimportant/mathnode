@@ -2574,6 +2574,7 @@ DistributionFactory.build = function(json) {
 }
 
 // 陳鍾誠增加的函數
+
 jstat.Normal = function(mean, sd) {
 	return new NormalDistribution(mean, sd);
 }
