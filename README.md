@@ -1,9 +1,9 @@
-MathNode is a Mathematics Platform in JavaScript
+ï»¿MathNode is a Mathematics Platform in JavaScript
 ==================================================
 
 Author
 -----------------
-Chung-Chen Chen (³¯Áé¸Û)
+Chung-Chen Chen (é™³é¾èª )
 
 Project Host
 --------------

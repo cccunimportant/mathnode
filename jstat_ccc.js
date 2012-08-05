@@ -1,4 +1,4 @@
-function jstat(){}
+ï»¿function jstat(){}
 j = jstat;
 /* Simple JavaScript Inheritance
  * By John Resig http://ejohn.org/
@@ -2573,7 +2573,7 @@ DistributionFactory.build = function(json) {
     }
 }
 
-// ³¯Áé¸Û¼W¥[ªº¨ç¼Æ
+// é™³é¾èª å¢åŠ çš„å‡½æ•¸
 jstat.Normal = function(mean, sd) {
 	return new NormalDistribution(mean, sd);
 }

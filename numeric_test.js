@@ -1,5 +1,5 @@
-var util = require('util');
-var nu=require('./numeric');  			// ª`·N¡A./ ¥Nªí circle »P¦¹µ{¦¡©ñ¦b¦P¤@­Ó¸ê®Æ§¨©³¤U¡C
+ï»¿var util = require('util');
+var nu=require('./numeric');  			// æ³¨æ„ï¼Œ./ ä»£è¡¨ circle èˆ‡æ­¤ç¨‹å¼æ”¾åœ¨åŒä¸€å€‹è³‡æ–™å¤¾åº•ä¸‹ã€‚
 
 var title=function(str) {
   console.log("> "+exp+"\n"+nu.prettyPrint(eval(exp))+"\n");
