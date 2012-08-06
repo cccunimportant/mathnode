@@ -225,4 +225,3 @@ run("sol = nu.dopri(0,2,1,function(x,y) { return y; },undefined,50,function(x,y)
 // Seedrandom (David Bau)
 run("nu.seedrandom.seedrandom(3); nu.seedrandom.random()");
 run("nu.seedrandom.random()");
-run("nu.seedrandom.seedrandom(3); nu.seedrandom.random()");

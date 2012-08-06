@@ -1,2598 +1,2972 @@
-ï»¿function jstat(){}
-j = jstat;
-/* Simple JavaScript Inheritance
- * By John Resig http://ejohn.org/
- * MIT Licensed.
- */
-// Inspired by base2 and Prototype
-(function(){
-    var initializing = false, fnTest = /xyz/.test(function(){
-        xyz;
-    }) ? /\b_super\b/ : /.*/;
-    // The base Class implementation (does nothing)
-    this.Class = function(){};
+// =========================== core.js =============================
+/**
+ * jStat - JavaScript Statistical Library
+ * Copyright (c) 2011
+ * This document is licensed as free software under the terms of the
+ * MIT License: http://www.opensource.org/licenses/mit-license.php */
+this.j$ = this.jStat = (function( Math, undefined ) {
 
-    // Create a new Class that inherits from this class
-    Class.extend = function(prop) {
-        var _super = this.prototype;
+	// for quick reference
+var slice = Array.prototype.slice,
+	toString = Object.prototype.toString,
 
-        // Instantiate a base class (but only create the instance,
-        // don't run the init constructor)
-        initializing = true;
-        var prototype = new this();
-        initializing = false;
+	// calculate correction for IEEE error
+	calcRdx = function( n, m ) {
+		var val = n > m ? n : m;
+		return Math.pow( 10, 17 - ~~( Math.log((( val > 0 ) ? val : -val )) * Math.LOG10E ));
+	},
 
-        // Copy the properties over onto the new prototype
-        for (var name in prop) {
-            // Check if we're overwriting an existing function
-            prototype[name] = typeof prop[name] == "function" &&
-            typeof _super[name] == "function" && fnTest.test(prop[name]) ?
-            (function(name, fn){
-                return function() {
-                    var tmp = this._super;
+	// test if array
+	isArray = Array.isArray || function( arg ) {
+		return toString.call( arg ) === '[object Array]';
+	},
 
-                    // Add a new ._super() method that is the same method
-                    // but on the super-class
-                    this._super = _super[name];
+	// test if function
+	isFunction = function( arg ) {
+		return toString.call( arg ) === '[object Function]';
+	},
 
-                    // The method only need to be bound temporarily, so we
-                    // remove it when we're done executing
-                    var ret = fn.apply(this, arguments);
-                    this._super = tmp;
+	// test if number and not NaN
+	isNumber = function( arg ) {
+		return toString.call( arg ) === '[object Number]' && !isNaN( arg );
+	};
 
-                    return ret;
-                };
-            })(name, prop[name]) :
-            prop[name];
-        }
-
-        // The dummy class constructor
-        function Class() {
-            // All construction is actually done in the init method
-            if ( !initializing && this.init )
-                this.init.apply(this, arguments);
-        }
-
-        // Populate our constructed prototype object
-        Class.prototype = prototype;
-
-        // Enforce the constructor to be what we expect
-        Class.constructor = Class;
-
-        // And make this class extendable
-        Class.extend = arguments.callee;
-
-        return Class;
-    };
-})();
-
-/******************************************************************************/
-/*                           Constants                                        */
-/******************************************************************************/
-jstat.ONE_SQRT_2PI  =   0.3989422804014327;
-jstat.LN_SQRT_2PI   =   0.9189385332046727417803297;
-jstat.LN_SQRT_PId2  =   0.225791352644727432363097614947;
-jstat.DBL_MIN       =   2.22507e-308;
-jstat.DBL_EPSILON   =   2.220446049250313e-16;
-jstat.SQRT_32       =   5.656854249492380195206754896838;
-jstat.TWO_PI        =   6.283185307179586;
-jstat.DBL_MIN_EXP   =   -999;
-jstat.SQRT_2dPI     =   0.79788456080287;
-jstat.LN_SQRT_PI    =   0.5723649429247;
-/******************************************************************************/
-/*                          jstat   Functions                                 */
-/******************************************************************************/
-jstat.seq = function(min, max, length) {
-    var r = new Range(min, max, length);
-    return r.getPoints();
+// global function
+function jStat() {
+	return new jStat.fn.init( arguments );
 }
 
-jstat.dnorm = function(x, mean, sd, log) {
-    if(mean == null) mean = 0;
-    if(sd == null) sd = 1;
-    if(log == null) log = false;
-    var n = new NormalDistribution(mean, sd);
-    if(!isNaN(x)) {
-        // is a number
-        return n._pdf(x, log);
-    } else if(x.length) {
-        var res = [];
-        for(var i = 0; i < x.length; i++) {
-            res.push(n._pdf(x[i], log));
-        }
-        return res;
-    } else {
-        throw "Illegal argument: x";
-    }
-}
+// extend jStat prototype
+jStat.fn = jStat.prototype = {
+	constructor : jStat,
+	init : function( args ) {
+		var i = 0;
+		// if first argument is an array, must be vector or matrix
+		if ( isArray( args[0] )) {
+			// check if matrix
+			if ( isArray( args[0][0] )) {
+				// see if a mapping function was also passed
+				if ( isFunction( args[1] )) {
+					args[0] = jStat.map( args[0], args[1] );
+				}
+				// itterating over each is faster than this.push.apply( this, args[0] );
+				for ( ; i < args[0].length; i++ ) {
+					this[i] = args[0][i];
+				}
+				this.length = args[0].length;
+			// so must be vector
+			} else {
+				this[0] = isFunction( args[1] ) ? jStat.map( args[0], args[1] ) : args[0];
+				this.length = 1;
+			}
+		// if first argument is number, assume creation of sequence
+		} else if ( isNumber( args[0] )) {
+			this[0] = jStat.seq.apply( null, args );
+			this.length = 1;
+		// handle case when jStat object is passed to jStat
+		} else if ( args[0] instanceof jStat ) {
+			// duplicate the object and pass it back
+			return jStat( args[0].toArray() );
+		// unexpected argument value, return empty jStat object
+		} else {
+			this[0] = [];
+			this.length = 1;
+		}
+		return this;
+	},
 
-jstat.pnorm = function(q, mean, sd, lower_tail, log) {
-    if(mean == null) mean = 0;
-    if(sd == null) sd = 1;
-    if(lower_tail == null) lower_tail = true;
-    if(log == null) log = false;
+	// default length
+	length : 0,
 
-    var n = new NormalDistribution(mean, sd);
-    if(!isNaN(q)) {
-        // is a number
-        return n._cdf(q, lower_tail, log);
-    } else if(q.length) {
-        var res = [];
-        for(var i = 0; i < q.length; i++) {
-            res.push(n._cdf(q[i], lower_tail, log));
-        }
-        return res;
-    } else {
-        throw "Illegal argument: x";
-    }
-}
+	// return clean array
+	toArray : function() {
+		return ( this.length > 1 ) ?
+			slice.call( this )
+		: slice.call( this )[0];
+	},
 
-jstat.dlnorm = function(x, meanlog, sdlog, log) {
-    if(meanlog == null) meanlog = 0;
-    if(sdlog == null) sdlog = 1;
-    if(log == null) log = false;
-    var n = new LogNormalDistribution(meanlog, sdlog);
-    if(!isNaN(x)) {
-        // is a number
-        return n._pdf(x, log);
-    } else if(x.length) {
-        var res = [];
-        for(var i = 0; i < x.length; i++) {
-            res.push(n._pdf(x[i], log));
-        }
-        return res;
-    } else {
-        throw "Illegal argument: x";
-    }
-}
+	// only to be used internally
+	push : [].push,
+	sort : [].sort,
+	splice : [].splice,
+	slice : [].slice
+};
 
-jstat.plnorm = function(q, meanlog, sdlog, lower_tail, log) {
-    if(meanlog == null) meanlog = 0;
-    if(sdlog == null) sdlog = 1;
-    if(lower_tail == null) lower_tail = true;
-    if(log == null) log = false;
+// for later instantiation
+jStat.fn.init.prototype = jStat.fn;
 
-    var n = new LogNormalDistribution(meanlog, sdlog);
-    if(!isNaN(q)) {
-        // is a number
-        return n._cdf(q, lower_tail, log);
-    }
-    else if(q.length) {
-        var res = [];
-        for(var i = 0; i < q.length; i++) {
-            res.push(n._cdf(q[i], lower_tail, log));
-        }
-        return res;
-    } else {
-        throw "Illegal argument: x";
-    }
-}
+// utility functions
+jStat.utils = {
+	calcRdx : calcRdx,
+	isArray : isArray,
+	isFunction : isFunction,
+	isNumber : isNumber
+};
 
-jstat.dbeta = function(x, alpha, beta, ncp, log) {
-    if(ncp == null) ncp = 0;
-    if(log == null) log = false;
-    var b = new BetaDistribution(alpha, beta);
-    if(!isNaN(x)) {
-        // is a number
-        return b._pdf(x, log);
-    }
-    else if(x.length) {
-        var res = [];
-        for(var i = 0; i < x.length; i++) {
-            res.push(b._pdf(x[i], log));
-        }
-        return res;
-    } else {
-        throw "Illegal argument: x";
-    }
-}
+// create method for easy extension
+jStat.extend = function( obj ) {
+	var args = slice.call( arguments ),
+		i = 1, j;
+	if ( args.length === 1 ) {
+		for ( j in obj ) {
+			jStat[j] = obj[j];
+		}
+		return this;
+	}
+	for ( ; i < args.length; i++ ) {
+		for ( j in args[i] ) obj[j] = args[i][j];
+	}
+	return obj;
+};
 
-jstat.pbeta = function(q, alpha, beta, ncp, lower_tail, log) {
-    if(ncp == null) ncp = 0;
-    if(log == null) log = false;
-    if(lower_tail == null) lower_tail = true;
+// static methods
+jStat.extend({
 
-    var b = new BetaDistribution(alpha, beta);
-    if(!isNaN(q)) {
-        // is a number
-        return b._cdf(q, lower_tail, log);
-    } else if(q.length) {
-        var res = [];
-        for(var i = 0; i < q.length; i++) {
-            res.push(b._cdf(q[i], lower_tail, log));
-        }
-        return res;
-    }
-    else {
-        throw "Illegal argument: x";
-    }
-}
+	// Returns the number of rows in the matrix
+	rows : function( arr ) {
+		return arr.length || 1;
+	},
 
-jstat.dgamma = function(x, shape, rate, scale, log) {
-    if(rate == null) rate = 1;
-    if(scale == null) scale = 1/rate;
-    if(log == null) log = false;
+	// Returns the number of columns in the matrix
+	cols : function( arr ) {
+		return arr[0].length || 1;
+	},
 
-    var g = new GammaDistribution(shape, scale);
-    if(!isNaN(x)) {
-        // is a number
-        return g._pdf(x, log);
-    } else if(x.length) {
-        var res = [];
-        for(var i = 0; i < x.length; i++) {
-            res.push(g._pdf(x[i], log));
-        }
-        return res;
-    } else {
-        throw "Illegal argument: x";
-    }
-}
+	// Returns the dimensions of the object { rows: i, cols: j }
+	dimensions : function( arr ) {
+		return {
+			rows : jStat.rows( arr ),
+			cols : jStat.cols( arr )
+		};
+	},
 
-jstat.pgamma = function(q, shape, rate, scale, lower_tail, log) {
-    if(rate == null) rate = 1;
-    if(scale == null) scale = 1/rate;
-    if(lower_tail == null) lower_tail = true;
-    if(log == null) log = false;
+	// Returns a specified row as a vector
+	row : function( arr, index ) {
+		return arr[ index ];
+	},
 
-    var g = new GammaDistribution(shape, scale);
-    if(!isNaN(q)) {
-        // is a number
-        return g._cdf(q, lower_tail, log);
-    } else if(q.length) {
-        var res = [];
-        for(var i = 0; i < q.length; i++) {
-            res.push(g._cdf(q[i], lower_tail, log));
-        }
-        return res;
-    } else {
-        throw "Illegal argument: x";
-    }
+	// Returns the specified column as a vector
+	col : function( arr, index ) {
+		var column = new Array( arr.length ),
+			i = 0;
+		for ( ; i < arr.length; i++ ) {
+			column[i] = [ arr[i][index] ];
+		}
+		return column;
+	},
 
-}
+	// Returns the diagonal of the matrix
+	diag : function( arr ) {
+		var row = 0,
+			nrow = jStat.rows( arr ),
+			res = new Array( nrow );
+		for ( ; row < nrow; row++ ) {
+			res[row] = [ arr[row][row] ];
+		}
+		return res;
+	},
 
-jstat.dt = function(x, df, ncp, log) {
-    if(log == null) log = false;
+	// Returns the anti-diagonal of the matrix
+	antidiag : function( arr ) {
+		var nrow = jStat.rows( arr ) - 1,
+			res = new Array( nrow ),
+			i = 0;
+		for ( ; nrow >= 0; nrow--, i++ ) {
+			res[i] = [ arr[i][nrow] ];
+		}
+		return res;
+	},
 
-    var t = new StudentTDistribution(df, ncp);
-    if(!isNaN(x)) {
-        // is a number
-        return t._pdf(x, log);
-    } else if(x.length) {
-        var res = [];
-        for(var i = 0; i < x.length; i++) {
-            res.push(t._pdf(x[i], log));
-        }
-        return res;
-    } else {
-        throw "Illegal argument: x";
-    }
+	// transpose a matrix or array
+	transpose : function( arr ) {
+		var obj = [],
+			i = 0,
+			rows, cols, j;
+		// make sure arr is in matrix format
+		if ( !isArray( arr[0] )) arr = [ arr ];
+		rows = arr.length;
+		cols = arr[0].length;
+		for ( ; i < cols; i++ ) {
+			obj.push( new Array( rows ));
+			for ( j = 0; j < rows; j++ ) {
+				obj[i][j] = arr[j][i];
+			}
+		}
+		// if obj is vector, return only single array
+		return ( obj.length === 1 ) ? obj[0] : obj;
+	},
 
-}
+	// map a function to an array or array of arrays
+	// toAlter is an internal variable
+	map : function( arr, func, toAlter ) {
+		var row = 0,
+			nrow, ncol, res, col;
+		if ( !isArray( arr[0] )) arr = [ arr ];
+		nrow = arr.length;
+		ncol = arr[0].length;
+		res = toAlter ? arr : new Array( nrow );
+		for ( ; row < nrow; row++ ) {
+			// if the row doesn't exist, create it
+			if ( !res[row] ) res[row] = new Array( ncol );
+			for ( col = 0; col < ncol; col++ )
+				res[row][col] = func( arr[row][col], row, col );
+		}
+		return ( res.length === 1 ) ? res[0] : res;
+	},
 
-jstat.pt = function(q, df, ncp, lower_tail, log) {
-    if(lower_tail == null) lower_tail = true;
-    if(log == null) log = false;
+	// destructively alter an array
+	alter : function( arr, func ) {
+		return jStat.map( arr, func, true );
+	},
 
-    var t = new StudentTDistribution(df, ncp);
-    if(!isNaN(q)) {
-        // is a number
-        return t._cdf(q, lower_tail, log);
-    } else if(q.length) {
-        var res = [];
-        for(var i = 0; i < q.length; i++) {
-            res.push(t._cdf(q[i], lower_tail, log));
-        }
-        return res;
-    } else {
-        throw "Illegal argument: x";
-    }
+	// generate a rows x cols matrix according to the supplied function
+	create : function ( rows, cols, func ) {
+		var res = new Array( rows ), i, j;
+		if ( isFunction( cols )) {
+			func = cols;
+			cols = rows;
+		}
+		for ( i = 0; i < rows; i++ ) {
+			res[i] = new Array( cols );
+			for ( j = 0; j < cols; j++ ) {
+				res[i][j] = func( i, j );
+			}
+		}
+		return res;
+	},
 
-}
+	// generate a rows x cols matrix of zeros
+	zeros : function( rows, cols ) {
+		if ( !isNumber( cols )) cols = rows;
+		return jStat.create( rows, cols, function() { return 0; });
+	},
 
-jstat.plot = function(x, y, options) {
-    if(x == null) {
-        throw "x is undefined in jstat.plot";
-    }
-    if(y == null) {
-        throw "y is undefined in jstat.plot";
-    }
-    if(x.length != y.length) {
-        throw "x and y lengths differ in jstat.plot";
-    }
+	// generate a rows x cols matrix of ones
+	ones : function( rows, cols ) {
+		if ( !isNumber( cols )) cols = rows;
+		return jStat.create( rows, cols, function() { return 1; });
+	},
 
-    var flotOpt = {
-        series: {
-            lines: {
+	// generate a rows x cols matrix of uniformly random numbers
+	rand : function( rows, cols ) {
+		if ( !isNumber( cols )) cols = rows;
+		return jStat.create( rows, cols, function() { return Math.random(); });
+	},
 
-            },
-            points: {
+	// generate an identity matrix of size row x cols
+	identity : function( rows, cols ) {
+		if ( !isNumber( cols )) cols = rows;
+		return jStat.create( rows, cols, function( i, j ) { return ( i === j ) ? 1 : 0; });
+	},
 
-        }
-        }
-    };
+	// Tests whether a matrix is symmetric
+	symmetric : function( arr ) {
+		var issymmetric = true,
+			row = 0,
+			size = arr.length, col;
+		if ( arr.length !== arr[0].length ) return false;
+		for ( ; row < size; row++ ) {
+			for ( col = 0; col < size; col++ ) {
+				if ( arr[col][row] !== arr[row][col] ) return false;
+			}
+		}
+		return true;
+	},
 
-    // combine x & y
-    var series = [];
-    if(x.length == undefined) {
-        // single point
-        series.push([x, y]);
-        flotOpt.series.points.show = true;
-    } else {
-        // array
-        for(var i = 0; i < x.length; i++) {
-            series.push([x[i], y[i]]);
-        }
-    }
+	// set all values to zero
+	clear : function( arr ) {
+		return jStat.alter( arr, function() { return 0; });
+	},
 
-    var title = 'jstat graph';
+	// generate sequence
+	seq : function( min, max, length, func ) {
+		if ( !isFunction( func )) func = false;
+		var arr = [],
+			hival = calcRdx( min, max ),
+			step = ( max * hival - min * hival ) / (( length - 1 ) * hival ),
+			current = min,
+			cnt = 0;
+		// current is assigned using a technique to compensate for IEEE error
+		for ( ; current <= max; cnt++, current = ( min * hival + step * hival * cnt ) / hival )
+			arr.push(( func ? func( current, cnt ) : current ));
+		return arr;
+	}
+});
 
-    // configure Flot options
-    if(options != null) {
-        // options = JSON.parse(String(options));
-        if(options.type != null) {
-            if(options.type == 'l') {
-                flotOpt.series.lines.show =  true;
-            } else if (options.type == 'p') {
-                flotOpt.series.lines.show = false;
-                flotOpt.series.points.show = true;
-            }
-        }
-        if(options.hover != null) {
-            flotOpt.grid = {
-                hoverable: options.hover
-            }
-        }
+// extend jStat.fn with methods that have no argument
+(function( funcs ) {
+	for ( var i = 0; i < funcs.length; i++ ) (function( passfunc ) {
+		jStat.fn[ passfunc ] = function( func ) {
+			var tmpthis = this,
+				results;
+			// check for callback
+			if ( func ) {
+				setTimeout(function() {
+					func.call( tmpthis, jStat.fn[ passfunc ].call( tmpthis ));
+				}, 15 );
+				return this;
+			}
+			results = jStat[ passfunc ]( this );
+			return isArray( results ) ? jStat( results ) : results;
+		};
+	})( funcs[i] );
+})( 'transpose clear symmetric rows cols dimensions diag antidiag'.split( ' ' ));
 
-        if(options.main != null) {
-            title = options.main;
-        }
-    }
-    var now = new Date();
-    var hash = now.getMilliseconds() * now.getMinutes() + now.getSeconds();
-    $('body').append('<div title="' + title + '" style="display: none;" id="'+ hash +'"><div id="graph-' + hash + '" style="width:95%; height: 95%"></div></div>');
+// extend jStat.fn with methods that have one argument
+(function( funcs ) {
+	for ( var i = 0; i < funcs.length; i++ ) (function( passfunc ) {
+		jStat.fn[ passfunc ] = function( index, func ) {
+			var tmpthis = this;
+			// check for callback
+			if ( func ) {
+				setTimeout(function() {
+					func.call( tmpthis, jStat.fn[ passfunc ].call( tmpthis, index ));
+				}, 15 );
+				return this;
+			}
+			return jStat( jStat[ passfunc ]( this, index ));
+		};
+	})( funcs[i] );
+})( 'row col'.split( ' ' ));
 
-    $('#' + hash).dialog({
-        modal: false,
-        width: 475,
-        height: 475,
-        resizable: true,
-        resize: function() {
-            $.plot($('#graph-' + hash), [series], flotOpt);
-        },
-        open: function(event, ui) {
-            var id = '#graph-' + hash;
-            $.plot($('#graph-' + hash), [series], flotOpt);
-        }
-    })
-}
+// extend jStat.fn with simple shortcut methods
+(function( funcs ) {
+	for ( var i = 0; i < funcs.length; i++ ) (function( passfunc ) {
+		jStat.fn[ passfunc ] = function() {
+			return jStat( jStat[ passfunc ].apply( null, arguments ));
+		};
+	})( funcs[i] );
+})( 'create zeros ones rand identity'.split( ' ' ));
 
-/******************************************************************************/
-/*                          Special Functions                                 */
-/******************************************************************************/
+// extend jStat.fn
+// specialized instance methods that can't have generalized assignments
+jStat.extend( jStat.fn, {
 
-jstat.log10 = function(arg) {
-    return Math.log(arg) / Math.LN10;
-}
+	// map a function to a matrix or vector
+	map : function( func, toAlter ) {
+		return jStat( jStat.map( this, func, toAlter ));
+	},
+
+	// destructively alter an array
+	alter : function( func ) {
+		jStat.alter( this, func );
+		return this;
+	}
+});
+
+// exposing jStat
+return jStat;
+
+})( Math );
+
+// =========================== vector.js =============================
+(function( jStat, Math ) {
+
+	// for quick reference
+var isFunction = jStat.utils.isFunction,
+
+	// ascending functions for sort
+	ascNum = function( a, b ) { return a - b; };
+
+jStat.extend({
+
+	// sum of an array
+	sum : function( arr ) {
+		var sum = 0,
+			i = arr.length,
+			tmp;
+		while ( --i >= 0 ) {
+			sum += arr[i];
+		}
+		return sum;
+	},
+
+	// sum squared
+	sumsqrd : function( arr ) {
+		var sum = 0,
+			i = arr.length;
+		while ( --i >= 0 ) sum += arr[i] * arr[i];
+		return sum;
+	},
+
+	// sum of squared errors of prediction (SSE)
+	sumsqerr : function( arr ) {
+		var mean = jStat.mean( arr ),
+			sum = 0,
+			i = arr.length,
+			tmp;
+		while ( --i >= 0 ) {
+			tmp = arr[i] - mean;
+			sum += tmp * tmp;
+		}
+		return sum;
+	},
+
+	// product of an array
+	product : function( arr ) {
+		var prod = 1,
+			i = arr.length;
+		while ( --i >= 0 ) prod *= arr[i];
+		return prod;
+	},
+
+	// minimum value of an array
+	min : function( arr ) {
+		var low = arr[0],
+			i = 0;
+		while ( ++i < arr.length )
+			if ( arr[i] < low ) low = arr[i];
+		return low;
+	},
+
+	// maximum value of an array
+	max : function( arr ) {
+		var high = arr[0],
+			i = 0;
+		while ( ++i < arr.length )
+			if ( arr[i] > high ) high = arr[i];
+		return high;
+	},
+
+	// mean value of an array
+	mean : function( arr ) {
+		return jStat.sum( arr ) / arr.length;
+	},
+
+	// mean squared error (MSE)
+	meansqerr : function( arr ) {
+		return jStat.sumsqerr( arr ) / arr.length;
+	},
+
+	// geometric mean of an array
+	geomean : function( arr ) {
+		return Math.pow( jStat.product( arr ), 1 / arr.length );
+	},
+
+	// median of an array
+	median : function( arr ) {
+		var arrlen = arr.length,
+			_arr = arr.slice().sort( ascNum );
+		// check if array is even or odd, then return the appropriate
+		return !( arrlen & 1 )
+			? ( _arr[( arrlen / 2 ) - 1 ] + _arr[( arrlen / 2 )]) / 2
+		: _arr[( arrlen / 2 ) | 0 ];
+	},
+
+	// cumulative sum of an array
+	cumsum : function( arr ) {
+		var len = arr.length,
+			sums = new Array( len ),
+			i = 1;
+		sums[0] = arr[0];
+		for ( ; i < len; i++ ) {
+			sums[i] = sums[i - 1] + arr[i];
+		}
+		return sums;
+	},
+
+	// successive differences of a sequence
+	diff : function( arr ) {
+		var diffs = [],
+			arrLen = arr.length,
+			i = 1;
+		for ( i = 1; i < arrLen; i++ ) {
+			diffs.push( arr[i] - arr[i-1]);
+		}
+		return diffs;
+	},
+
+	// mode of an array
+	// if there are multiple modes of an array, return all of them
+	// is this the appropriate way of handling it?
+	mode : function( arr ) {
+		var arrLen = arr.length,
+			_arr = arr.slice().sort( ascNum ),
+			count = 1,
+			maxCount = 0,
+			numMaxCount = 0,
+			i = 0,
+			mode_arr = [];
+		for ( ; i < arrLen; i++ ) {
+			if ( _arr[ i ] === _arr[ i + 1 ] ) {
+				count++;
+			} else {
+				if ( count > maxCount ) {
+					mode_arr = [ _arr[i] ];
+					maxCount = count;
+					numMaxCount = 0;
+				}
+				// are there multiple max counts
+				else if ( count === maxCount ) {
+					mode_arr.push(_arr[i]);
+					numMaxCount++;
+				}
+
+				// resetting count for new value in array
+				count = 1;
+			}
+		}
+		return ( numMaxCount === 0 ) ? mode_arr[0] : mode_arr;
+	},
+
+	// range of an array
+	range : function( arr ) {
+		return jStat.max( arr ) - jStat.min( arr );
+	},
+
+	// variance of an array
+	// flag indicates population vs sample
+	variance : function( arr, flag ) {
+		return jStat.sumsqerr( arr ) / ( arr.length - ( flag ? 1 : 0 ));
+	},
+
+	// standard deviation of an array
+	// flag indicates population vs sample
+	stdev : function( arr, flag ) {
+		return Math.sqrt( jStat.variance( arr, flag ));
+	},
+
+	// mean deviation (mean absolute deviation) of an array
+	meandev : function( arr ) {
+		var devSum = 0,
+			mean = jStat.mean( arr ),
+			i = arr.length - 1;
+		for ( ; i >= 0; i-- ) {
+			devSum += Math.abs( arr[i] - mean );
+		}
+		return devSum / arr.length;
+	},
+
+	// median deviation (median absolute deviation) of an array
+	meddev : function( arr ) {
+		var devSum = 0,
+			median = jStat.median( arr ),
+			i = arr.length - 1;
+		for ( ; i >= 0; i-- ) {
+			devSum += Math.abs( arr[i] - median );
+		}
+		return devSum / arr.length;
+	},
+
+	// coefficient of variation
+	coeffvar : function( arr ) {
+		return jStat.stdev( arr ) / jStat.mean( arr );
+	},
+
+	// quartiles of an array
+	quartiles : function( arr ) {
+		var arrlen = arr.length,
+			_arr = arr.slice().sort( ascNum );
+		return [
+			_arr[ Math.round(( arrlen ) / 4 ) - 1 ],
+			_arr[ Math.round(( arrlen ) / 2 ) - 1 ],
+			_arr[ Math.round(( arrlen ) * 3 / 4 ) - 1 ]
+		];
+	},
+
+	// covariance of two arrays
+	covariance : function( arr1, arr2 ) {
+		var u = jStat.mean( arr1 ),
+			v = jStat.mean( arr2 ),
+			arr1Len = arr1.length,
+			sq_dev = new Array(arr1Len),
+			i = 0;
+		for ( ; i < arr1Len; i++ ) {
+			sq_dev[i] = ( arr1[i] - u ) * ( arr2[i] - v );
+		}
+		return jStat.sum( sq_dev ) / ( arr1Len - 1 );
+	},
+
+	// population correlation coefficient
+	corrcoeff : function( arr1, arr2 ) {
+		return jStat.covariance( arr1, arr2 ) / jStat.stdev( arr1, 1 ) / jStat.stdev( arr2, 1 );
+	}
+});
+
+// extend jStat.fn with methods which don't require arguments and work on columns
+(function( funcs ) {
+	for ( var i = 0; i < funcs.length; i++ ) (function( passfunc ) {
+		// if a matrix is passed, automatically assume operation should be done on the columns
+		jStat.fn[ passfunc ] = function( fullbool, func ) {
+			var arr = [],
+				i = 0,
+				tmpthis = this;
+			// assignment reassignation depending on how parameters were passed in
+			if ( isFunction( fullbool )) {
+				func = fullbool;
+				fullbool = false;
+			}
+			// check if a callback was passed with the function
+			if ( func ) {
+				setTimeout( function() {
+					func.call( tmpthis, jStat.fn[ passfunc ].call( tmpthis, fullbool ));
+				}, 15 );
+				return this;
+			}
+			// check if matrix and run calculations
+			if ( this.length > 1 ) {
+				tmpthis = fullbool === true ? this : this.transpose();
+				for ( ; i < tmpthis.length; i++ )
+					arr[i] = jStat[ passfunc ]( tmpthis[i] );
+				
+				return fullbool === true ? jStat[ passfunc ]( arr ) : arr;
+			}
+			// pass fullbool if only vector, not a matrix. for variance and stdev
+			return jStat[ passfunc ]( this[0], fullbool );
+		};
+	})( funcs[i] );
+})( 'sum sumsqrd sumsqerr product min max mean meansqerr geomean median diff mode range variance stdev meandev meddev coeffvar quartiles'.split( ' ' ));
+
+// extend jStat.fn with method for calculating cumulative sums, as it does not run again in case of true
+// if a matrix is passed, automatically assume operation should be done on the columns
+jStat.fn.cumsum = function( fullbool, func ) {
+	var arr = [],
+		i = 0,
+		tmpthis = this;
+	// assignment reassignation depending on how parameters were passed in
+	if ( isFunction( fullbool )) {
+		func = fullbool;
+		fullbool = false;
+	}
+	// check if a callback was passed with the function
+	if ( func ) {
+		setTimeout( function() {
+			func.call( tmpthis, jStat.fn.cumsum.call( tmpthis, fullbool ));
+		}, 15 );
+		return this;
+	}
+	// check if matrix and run calculations
+	if ( this.length > 1 ) {
+		tmpthis = fullbool === true ? this : this.transpose();
+		for ( ; i < tmpthis.length; i++ )
+			arr[i] = jStat.cumsum( tmpthis[i] );
+		return arr;
+	}
+	return jStat.cumsum( this[0], fullbool );
+};
+
+}( this.jStat, Math ));
+
+// =========================== distribution.js =============================
+(function( jStat, Math ) {
+
+// generate all distribution instance methods
+(function( list ) {
+	for ( var i = 0; i < list.length; i++ ) (function( func ) {
+		// distribution instance method
+		jStat[ func ] = function( a, b, c ) {
+			if (!( this instanceof arguments.callee )) return new arguments.callee( a, b, c );
+			this._a = a;
+			this._b = b;
+			this._c = c;
+			return this;
+		};
+		// distribution method to be used on a jStat instance
+		jStat.fn[ func ] = function( a, b, c ) {
+			var newthis = jStat[ func ]( a, b, c );
+			newthis.data = this;
+			return newthis;
+		};
+		// sample instance method
+		jStat[ func ].prototype.sample = function( arr ) {
+			var a = this._a,
+				b = this._b,
+				c = this._c;
+			if ( arr )
+				return jStat.alter( arr, function() {
+					return jStat[ func ].sample( a, b, c );
+				});
+			else
+				return jStat[ func ].sample( a, b, c );
+		};
+		// generate the pdf, cdf and inv instance methods
+		(function( vals ) {
+			for ( var i = 0; i < vals.length; i++ ) (function( fnfunc ) {
+				jStat[ func ].prototype[ fnfunc ] = function( x ) {
+					var a = this._a,
+						b = this._b,
+						c = this._c;
+					if ( !x ) x = this.data;
+					if ( typeof x !== 'number' ) {
+						return jStat.fn.map.call( x, function( x ) {
+							return jStat[ func ][ fnfunc ]( x, a, b, c );
+						});
+					}
+					return jStat[ func ][ fnfunc ]( x, a, b, c );
+				};
+			})( vals[ i ]);
+		})( 'pdf cdf inv'.split( ' ' ));
+		// generate the mean, median, mode and variance instance methods
+		(function( vals ) {
+			for ( var i = 0; i < vals.length; i++ ) (function( fnfunc ) {
+				jStat[ func ].prototype[ fnfunc ] = function() {
+					return jStat[ func ][ fnfunc ]( this._a, this._b, this._c );
+				};
+			})( vals[ i ]);
+		})( 'mean median mode variance'.split( ' ' ));
+	})( list[ i ]);
+})((
+	'beta centralF cauchy chisquare exponential gamma invgamma kumaraswamy lognormal normal ' +
+	'pareto studentt weibull uniform  binomial negbin hypgeom poisson triangular'
+).split( ' ' ));
+
+
+
+// extend beta function with static methods
+jStat.extend( jStat.beta, {
+	pdf : function( x, alpha, beta ) {
+		return (x > 1 || x < 0) ? 0 : ( Math.pow( x, alpha - 1 ) * Math.pow( 1 - x, beta - 1 )) / jStat.betafn( alpha, beta );
+	},
+
+	cdf : function( x, alpha, beta ) {
+		return (x > 1 || x < 0) ? (x > 1) * 1 : jStat.ibeta( x, alpha, beta );
+	},
+
+	inv : function( x, alpha, beta ) {
+		return jStat.ibetainv( x, alpha, beta );
+	},
+
+	mean : function( alpha, beta ) {
+		return alpha / ( alpha + beta );
+	},
+
+	median : function( alpha, beta ) {
+		// TODO: implement beta median
+	},
+
+	mode : function( alpha, beta ) {
+		return ( alpha * beta ) / ( Math.pow( alpha + beta, 2 ) * ( alpha + beta + 1 ));
+	},
+
+	// return a random sample
+	sample : function( alpha, beta ) {
+		var u = jStat.randg( alpha );
+		return u / ( u + jStat.randg( beta ));
+	},
+
+	variance : function( alpha, beta ) {
+		return ( alpha * beta ) / ( Math.pow( alpha + beta, 2 ) * ( alpha + beta + 1 ));
+	}
+});
+
+// extend F function with static methods
+jStat.extend( jStat.centralF, {
+	pdf : function( x, df1, df2 ) {
+		return  ( x >= 0) ?  
+			Math.sqrt( ( Math.pow( df1 * x, df1) * Math.pow( df2, df2 ) ) / ( Math.pow(df1 * x + df2, df1 + df2 ) ) ) / ( x * jStat.betafn( df1/2, df2/2 ) ) : undefined;
+		
+	},
+
+	cdf : function( x, df1, df2 ) {
+		return jStat.ibeta( ( df1 * x ) / ( df1 * x + df2 ), df1 / 2, df2 / 2 );
+	},
+
+	inv : function( x, df1, df2 ) {
+		return df2 / (df1 * ( 1 / jStat.ibetainv( x, df1 / 2, df2 / 2 ) - 1 ) );
+	},
+
+	mean : function( df1, df2 ) {
+		return ( df2 > 2 ) ? df2 / ( df2 - 2 ) : undefined;
+	},
+
+	mode : function( df1, df2 ) {
+		return ( df1 > 2) ? ( df2 * ( df1 - 2 ) ) / ( df1 * ( df2 + 2 ) ) : undefined;
+	},
+
+	// return a random sample
+	sample : function( df1, df2 ) {
+		var x1 = jStat.randg( df1 / 2 ) * 2;
+		var x2 = jStat.randg( df2 / 2 ) * 2;
+		return ( x1 / df1 ) / ( x2 / df2 );
+	},
+
+	variance : function( df1, df2 ) {
+		return ( df2 > 4 ) ? 2 * df2 * df2 * ( df1 + df2 - 2) / ( df1 * ( df2 - 2 ) * ( df2 - 2 ) * ( df2 - 4 ) ): undefined;
+	}
+});
+
+
+// extend cauchy function with static methods
+jStat.extend( jStat.cauchy, {
+	pdf : function( x, local, scale ) {
+		return ( scale / ( Math.pow( x - local, 2 ) + Math.pow( scale, 2 ))) / Math.PI;
+	},
+
+	cdf : function( x, local, scale ) {
+		return Math.atan(( x - local) / scale ) / Math.PI + 0.5;
+	},
+
+	inv : function( p, local, scale ) {
+		return local + scale * Math.tan( Math.PI * ( p - 0.5 ));
+	},
+
+	median: function( local, scale ) {
+		return local;
+	},
+
+	mode : function( local, scale ) {
+		return local;
+	},
+
+	sample : function( local, scale ) {
+		return jStat.randn() * Math.sqrt( 1 / ( 2 * jStat.randg( 0.5 ))) * scale + local;
+	}
+});
+
+
+
+// extend chisquare function with static methods
+jStat.extend( jStat.chisquare, {
+	pdf : function( x, dof ) {
+		return Math.exp(( dof / 2 - 1 ) * Math.log( x ) - x / 2 - ( dof / 2 ) * Math.log( 2 ) - jStat.gammaln( dof / 2 ));
+	},
+
+	cdf : function( x, dof ) {
+		return jStat.gammap( dof / 2, x / 2 );
+	},
+
+	inv : function( p, dof ) {
+		return 2 * jStat.gammapinv( p, 0.5 * dof );
+	},
+
+	mean : function( dof ) {
+		return dof;
+	},
+
+	//TODO: this is an approximation (is there a better way?)
+	median : function( dof ) {
+		return dof * Math.pow( 1 - ( 2 / ( 9 * dof )), 3 );
+	},
+
+	mode : function( dof ) {
+		return ( dof - 2 > 0 ) ? dof - 2 : 0;
+	},
+
+	sample : function( dof ) {
+		return jStat.randg( dof / 2 ) * 2;
+	},
+
+	variance: function( dof ) {
+		return 2 * dof;
+	}
+});
+
+
+
+// extend exponential function with static methods
+jStat.extend( jStat.exponential, {
+	pdf : function( x, rate ) {
+		return x < 0 ? 0 : rate * Math.exp( -rate * x );
+	},
+
+	cdf : function( x, rate ) {
+		return x < 0 ? 0 : 1 - Math.exp( -rate * x );
+	},
+
+	inv : function( p, rate ) {
+		return -Math.log( 1 - p ) / rate;
+	},
+
+	mean : function( rate ) {
+		return 1 / rate;
+	},
+
+	median : function ( rate ) {
+		return ( 1 / rate ) * Math.log( 2 );
+	},
+
+	mode : function( rate ) {
+		return 0;
+	},
+
+	sample : function( rate ) {
+		return -1 / rate * Math.log( Math.random());
+	},
+
+	variance : function( rate ) {
+		return Math.pow( rate, -2 );
+	}
+});
+
+
+
+// extend gamma function with static methods
+jStat.extend( jStat.gamma, {
+	pdf : function( x, shape, scale ) {
+		return Math.exp(( shape - 1 ) * Math.log( x ) - x / scale - jStat.gammaln( shape ) - shape * Math.log( scale ));
+	},
+
+	cdf : function( x, shape, scale ) {
+		return jStat.gammap( shape, x / scale );
+	},
+
+	inv : function( p, shape, scale ) {
+		return jStat.gammapinv( p, shape ) * scale;
+	},
+
+	mean : function( shape, scale ) {
+		return shape * scale;
+	},
+
+	mode : function( shape, scale ) {
+		if( shape > 1 ) return ( shape - 1 ) * scale;
+		return undefined;
+	},
+
+	sample : function( shape, scale ) {
+		return jStat.randg( shape ) * scale;
+	},
+
+	variance: function( shape, scale ) {
+		return shape * scale * scale;
+	}
+});
+
+// extend inverse gamma function with static methods
+jStat.extend( jStat.invgamma, {
+	pdf : function( x, shape, scale ) {
+		return Math.exp( -( shape + 1 ) * Math.log( x ) - scale/x - jStat.gammaln( shape ) + shape * Math.log( scale ) );
+	},
+
+	cdf : function( x, shape, scale ) {
+		return 1 - jStat.gammap( shape, scale / x );
+	},
+
+	inv : function( p, shape, scale ) {
+		return scale / jStat.gammapinv( 1 - p, shape );
+	},
+
+	mean : function( shape, scale ) {
+		return ( shape > 1 ) ? scale / ( shape - 1 ) : undefined;
+	},
+
+	mode : function( shape, scale ) {
+		return scale / ( shape + 1 );
+	},
+
+	sample : function( shape, scale ) {
+		return scale / jStat.randg( shape );
+	},
+
+	variance: function( shape, scale ) {
+		return (shape > 2) ? scale * scale / ( ( shape - 1 ) * ( shape - 1) * ( shape - 2 ) ): undefined;
+	}
+});
+
+
+// extend kumaraswamy function with static methods
+jStat.extend( jStat.kumaraswamy, {
+	pdf : function( x, alpha, beta ) {
+		return Math.exp( Math.log( alpha ) + Math.log( beta ) + ( alpha - 1 ) * Math.log( x ) + ( beta - 1 ) * Math.log( 1 - Math.pow( x, alpha )));
+	},
+
+	cdf : function( x, alpha, beta ) {
+		return ( 1 - Math.pow( 1 - Math.pow( x, alpha ), beta ));
+	},
+
+	mean : function( alpha, beta ) {
+		return ( beta * jStat.gammafn( 1 + 1 / alpha ) * jStat.gammafn( beta )) / ( jStat.gammafn( 1 + 1 / alpha + beta ));
+	},
+
+	median : function( alpha, beta ) {
+		return Math.pow( 1 - Math.pow( 2, -1 / beta ), 1 / alpha );
+	},
+
+	mode : function( alpha, beta ) {
+		return ( alpha >= 1 && beta >= 1 && ( alpha !== 1 && beta !== 1 )) ? Math.pow(( alpha - 1 ) / ( alpha * beta - 1 ), 1 / alpha ) : undefined;
+	},
+
+	variance: function( alpha, beta ) {
+		// TODO: complete this
+	}
+});
+
+
+
+// extend lognormal function with static methods
+jStat.extend( jStat.lognormal, {
+	pdf : function( x, mu, sigma ) {
+		return Math.exp(-Math.log( x ) - 0.5 * Math.log( 2 * Math.PI ) - Math.log( sigma ) - Math.pow( Math.log( x ) - mu, 2 ) / ( 2 * sigma * sigma ));
+	},
+
+	cdf : function( x, mu, sigma ) {
+		return 0.5 + ( 0.5 * jStat.erf(( Math.log( x ) - mu ) / Math.sqrt( 2 * sigma * sigma )));
+	},
+
+	inv : function( p, mu, sigma ) {
+		return Math.exp( -1.41421356237309505 * sigma * jStat.erfcinv( 2 * p ) + mu );
+	},
+
+	mean : function( mu, sigma ) {
+		return Math.exp( mu + sigma * sigma / 2);
+	},
+
+	median : function( mu, sigma ) {
+		return Math.exp( mu );
+	},
+
+	mode : function( mu, sigma ) {
+		return Math.exp( mu - sigma * sigma );
+	},
+
+	sample : function( mu, sigma ) {
+		return Math.exp( jStat.randn() * sigma + mu );
+	},
+
+	variance : function( mu, sigma ) {
+		return ( Math.exp( sigma * sigma ) - 1 ) * Math.exp( 2 * mu + sigma * sigma );
+	}
+});
+
+
+
+// extend normal function with static methods
+jStat.extend( jStat.normal, {
+	pdf : function( x, mean, std ) {
+		return Math.exp( -0.5 * Math.log( 2 * Math.PI ) - Math.log( std ) - Math.pow( x - mean, 2 ) / ( 2 * std * std ));
+	},
+
+	cdf : function( x, mean, std ) {
+		return 0.5 * ( 1 + jStat.erf(( x - mean ) / Math.sqrt( 2 * std * std )));
+	},
+
+	inv : function( p, mean, std ) {
+		return -1.41421356237309505 * std * jStat.erfcinv( 2 * p ) + mean;
+	},
+
+	mean : function( mean, std ) {
+		return mean;
+	},
+
+	median : function( mean, std ) {
+		return mean;
+	},
+
+	mode : function ( mean, std ) {
+		return mean;
+	},
+
+	sample : function( mean, std ) {
+		return jStat.randn() * std + mean;
+	},
+
+	variance : function( mean, std ) {
+		return std * std;
+	}
+});
+
+
+
+// extend pareto function with static methods
+jStat.extend( jStat.pareto, {
+	pdf : function( x, scale, shape ) {
+		return ( x > scale ) ? ( shape * Math.pow( scale, shape )) / Math.pow( x, shape + 1 ) : undefined;
+	},
+
+	cdf : function( x, scale, shape ) {
+		return 1 - Math.pow( scale / x, shape );
+	},
+
+	mean : function( scale, shape ) {
+		return ( shape > 1 ) ? ( shape * Math.pow( scale, shape )) / ( shape - 1 ) : undefined;
+	},
+
+	median : function( scale, shape ) {
+		return scale * ( shape * Math.SQRT2 );
+	},
+
+	mode : function( scale, shape ) {
+		return scale;
+	},
+
+	variance : function( scale, shape ) {
+		return ( shape > 2 ) ? ( scale*scale * shape ) / ( Math.pow( shape - 1, 2 ) * ( shape - 2 )) : undefined;
+	}
+});
+
+
+
+// extend studentt function with static methods
+jStat.extend( jStat.studentt, {
+	pdf : function( x, dof ) {
+		return ( jStat.gammafn(( dof + 1 ) / 2 ) / ( Math.sqrt( dof * Math.PI ) * jStat.gammafn( dof / 2 ))) * Math.pow( 1 + (( x*x ) / dof ), -(( dof + 1 ) / 2 ));
+	},
+
+	cdf : function( x, dof ) {
+		var dof2 = dof / 2;
+		return jStat.ibeta(( x + Math.sqrt( x * x + dof )) / ( 2 * Math.sqrt( x * x + dof )), dof2, dof2 );
+	},
+
+	inv : function( p, dof ) {
+		var x = jStat.ibetainv( 2 * Math.min( p, 1 - p ), 0.5 * dof, 0.5 );
+		x = Math.sqrt( dof * ( 1 - x ) / x );
+		return ( p > 0 ) ? x : -x;
+	},
+
+	mean : function( dof ) {
+		return ( dof > 1 ) ? 0 : undefined;
+	},
+
+	median : function ( dof ) {
+		return 0;
+	},
+
+	mode : function( dof ) {
+		return 0;
+	},
+
+	sample : function( dof ) {
+		return jStat.randn() * Math.sqrt( dof / ( 2 * jStat.randg( dof / 2)));
+	},
+
+	variance : function( dof ) {
+		return ( dof  > 2 ) ? dof / ( dof - 2 ) : ( dof > 1 ) ? Infinity : undefined;
+	}
+});
+
+
+
+// extend weibull function with static methods
+jStat.extend( jStat.weibull, {
+	pdf : function( x, scale, shape ) {
+		return x < 0 ? 0 : ( shape / scale ) * Math.pow(( x / scale ),( shape - 1 )) * Math.exp(-( Math.pow(( x / scale ), shape )));
+	},
+
+	cdf : function( x, scale, shape ) {
+		return x < 0 ? 0 : 1 - Math.exp( -Math.pow(( x / scale ), shape ));
+	},
+
+	inv : function( p, scale, shape ) {
+		return scale * Math.pow( -Math.log( 1 - p ), 1 / shape );
+	},
+
+	mean : function( scale, shape ) {
+		return scale * jStat.gammafn( 1 + 1 / shape );
+	},
+
+	median : function( scale, shape ) {
+		return scale * Math.pow( Math.log( 2 ), 1 / shape );
+	},
+
+	mode : function( scale, shape ) {
+		return ( shape > 1 ) ? scale * Math.pow(( shape - 1 ) / shape, 1 / shape ) : undefined;
+	},
+
+	sample : function( scale, shape ) {
+		return scale * Math.pow( -Math.log( Math.random()), 1 / shape );
+	},
+
+	variance : function( scale, shape ) {
+		return scale * scale * jStat.gammafn( 1 + 2 / shape ) - Math.pow( this.mean( scale, shape ), 2 );
+	}
+});
+
+
+
+// extend uniform function with static methods
+jStat.extend( jStat.uniform, {
+	pdf : function( x, a, b ) {
+		return ( x < a || x > b ) ? 0 : 1 / ( b - a );
+	},
+
+	cdf : function( x, a, b ) {
+		if ( x < a ) {
+			return 0;
+		} else if ( x < b ) {
+			return ( x - a ) / ( b - a );
+		}
+		return 1;
+	},
+
+	mean : function( a, b ) {
+		return 0.5 * ( a + b );
+	},
+
+	median : function( a, b ) {
+		return jStat.mean( a, b );
+	},
+
+	mode : function( a, b ) {
+		// TODO: complete this
+	},
+
+	sample : function( a, b ) {
+		return ( a / 2 + b / 2 ) + ( b / 2 - a / 2) * ( 2 * Math.random() - 1);
+	},
+
+	variance : function( a, b ) {
+		return Math.pow( b - a, 2 ) / 12;
+	}
+});
+
+
+
+// extend uniform function with static methods
+jStat.extend( jStat.binomial, {
+	pdf : function( k, n, p ) {
+		return ( p === 0 || p === 1 ) ?
+			(( n * p ) === k ? 1 : 0 ) :
+		jStat.combination( n, k ) * Math.pow( p, k ) * Math.pow( 1 - p, n - k );
+	},
+
+	cdf : function( x, n, p ) {
+		var binomarr = [],
+			k = 0;
+		if ( x < 0 ) {
+			return 0;
+		}
+		if ( x < n ) {
+			for ( ; k <= x; k++ ) {
+				binomarr[ k ] = jStat.binomial.pdf( k, n, p );
+			}
+			return jStat.sum( binomarr );
+		}
+		return 1;
+	}
+});
+
+
+
+// extend uniform function with static methods
+jStat.extend( jStat.negbin, {
+	pdf : function( k, r, p ) {
+		return k !== k | 0
+			? false
+		: k < 0
+			? 0
+		: jStat.combination( k + r - 1, k ) * Math.pow( 1 - p, r ) * Math.pow( p, k );
+	},
+
+	cdf : function( x, r, p ) {
+		var sum = 0,
+			k = 0;
+		if ( x < 0 ) return 0;
+		for ( ; k <= x; k++ ) {
+			sum += jStat.negbin.pdf( k, r, p );
+		}
+		return sum;
+	}
+});
+
+
+
+// extend uniform function with static methods
+jStat.extend( jStat.hypgeom, {
+	pdf : function( k, N, m, n ) {
+		return k !== k | 0
+			? false
+		: ( k < 0)
+			? 0
+		: jStat.combination( m, k ) * jStat.combination( N - m , n - k ) / jStat.combination( N, n );
+	},
+
+	cdf : function( x, N, m, n ) {
+		var sum = 0,
+			k = 0;
+		if ( x < 0 ) return 0;
+		for ( ; k <= x; k++ ) {
+			sum += jStat.hypgeom.pdf( k, N, m, n );
+		}
+		return sum;
+	}
+});
+
+
+
+// extend uniform function with static methods
+jStat.extend( jStat.poisson, {
+	pdf : function( k, l ) {
+		return Math.pow( l, k ) * Math.exp( -l ) / jStat.factorial( k );
+	},
+
+	cdf : function( x, l ) {
+		var sumarr = [],
+			k = 0;
+		if ( x < 0 ) return 0;
+		for ( ; k <= x; k++ ) {
+			sumarr.push(jStat.poisson.pdf( k, l ));
+		}
+		return jStat.sum(sumarr);
+	},
+
+	mean : function( l ) {
+		return l;
+	},
+
+	variance : function( l ) {
+		return l;
+	},
+
+	sample : function( l ) {
+		var p = 1, k = 0, L = Math.exp(-l);
+		do {
+			k++;
+			p *= Math.random();
+		} while (p > L);
+		return k - 1;
+	}
+});
+
+// extend triangular function with static methods
+jStat.extend( jStat.triangular, {
+	pdf : function( x, a, b, c ) {
+		return ( b <= a || c < a || c > b )
+			? undefined
+		: ( x < a || x > b )
+			? 0
+		: ( x <= c )
+			? ( 2 * ( x - a )) / (( b - a ) * ( c - a ))
+		: ( 2 * ( b - x )) / (( b - a ) * ( b - c ));
+	},
+
+	cdf : function( x, a, b, c ) {
+		if ( b <= a || c < a || c > b )
+			return undefined;
+		if ( x < a ) {
+			return 0;
+		} else {
+			if ( x <= c )
+				return Math.pow( x - a, 2 ) / (( b - a ) * ( c - a ));
+			return 1 - Math.pow( b - x, 2 ) / (( b - a ) * ( b - c ));
+		}
+		// never reach this
+		return 1;
+	},
+
+	mean : function( a, b, c ) {
+		return ( a + b + c ) / 3;
+	},
+
+	median : function( a, b, c ) {
+		if ( c <= ( a + b ) / 2 ) {
+			return b - Math.sqrt(( b - a ) * ( b - c )) / Math.sqrt( 2 );
+		} else if ( c > ( a + b ) / 2 ) {
+			return a + Math.sqrt(( b - a ) * ( c - a )) / Math.sqrt( 2 );
+		}
+	},
+
+	mode : function( a, b, c ) {
+		return c;
+	},
+
+	sample : function( a, b, c ) {
+		var u = Math.random();
+		return u < (( c - a ) / ( b - a )) ?
+			a + Math.sqrt( u * ( b - a ) * ( c - a )) : b - Math.sqrt(( 1 - u ) * ( b - a ) * ( b - c ));
+	},
+
+	variance : function( a, b, c ) {
+		return ( a * a + b * b + c * c - a * b - a * c - b * c ) / 18;
+	}
+});
+
+})( this.jStat, Math );
+
+// =========================== regression.js =============================
 
 /*
- *
- */
-jstat.toSigFig = function(num, n) {
-    if(num == 0) {
-        return 0;
-    }
-    var d = Math.ceil(jstat.log10(num < 0 ? -num: num));
-    var power = n - parseInt(d);
-    var magnitude = Math.pow(10,power);
-    var shifted = Math.round(num*magnitude);
-    return shifted/magnitude;
-}
-
-jstat.trunc = function(x) {
-    return (x > 0) ? Math.floor(x) : Math.ceil(x);
-}
-
-/**
- *  Tests whether x is a finite number
- */
-jstat.isFinite = function(x) {
-    return (!isNaN(x) && (x != Number.POSITIVE_INFINITY) && (x != Number.NEGATIVE_INFINITY));
-}
-
-/**
- *      dopois_raw() computes the Poisson probability  lb^x exp(-lb) / x!.
- *      This does not check that x is an integer, since dgamma() may
- *      call this with a fractional x argument. Any necessary argument
- *      checks should be done in the calling function.
- */
-jstat.dopois_raw = function(x, lambda, give_log) {
-    /*       x >= 0 ; integer for dpois(), but not e.g. for pgamma()!
-        lambda >= 0
-     */
-    if (lambda == 0) {
-        if(x == 0) {
-            return(give_log) ? 0.0 : 1.0; //R_D__1
-        }
-        return (give_log) ? Number.NEGATIVE_INFINITY : 0.0; // R_D__0
-    }
-    if (!jstat.isFinite(lambda)) return (give_log) ? Number.NEGATIVE_INFINITY : 0.0; //R_D__0;
-    if (x < 0) return(give_log) ? Number.NEGATIVE_INFINITY : 0.0; //R_D__0
-    if (x <= lambda * jstat.DBL_MIN) {
-        return (give_log) ? -lambda : Math.exp(-lambda);    // R_D_exp(-lambda)
-    }
-    if (lambda < x * jstat.DBL_MIN) {
-        var param = -lambda + x*Math.log(lambda) -jstat.lgamma(x+1);
-        return (give_log) ? param : Math.exp(param);    // R_D_exp(-lambda + x*log(lambda) -lgammafn(x+1))
-    }
-    var param1 = jstat.TWO_PI * x;  // f
-    var param2 = -jstat.stirlerr(x)-jstat.bd0(x,lambda);    // x
-    return (give_log) ? -0.5*Math.log(param1)+param2 : Math.exp(param2)/Math.sqrt(param1);  // R_D_fexp(M_2PI*x, -stirlerr(x)-bd0(x,lambda))
-//return(R_D_fexp( , -stirlerr(x)-bd0(x,lambda) ));
-}
-
-/**	Evaluates the "deviance part"
- *	bd0(x,M) :=  M * D0(x/M) = M*[ x/M * log(x/M) + 1 - (x/M) ] =
- *		  =  x * log(x/M) + M - x
- *	where M = E[X] = n*p (or = lambda), for	  x, M > 0
- *
- *	in a manner that should be stable (with small relative error)
- *	for all x and M=np. In particular for x/np close to 1, direct
- *	evaluation fails, and evaluation is based on the Taylor series
- *	of log((1+v)/(1-v)) with v = (x-np)/(x+np).
- */
-jstat.bd0 = function(x, np) {
-    var ej, s, s1, v, j;
-    if(!jstat.isFinite(x) || !jstat.isFinite(np) || np == 0.0) throw "illegal parameter in jstat.bd0";
-
-    if(Math.abs(x-np) > 0.1*(x+np)) {
-        v = (x-np)/(x+np);
-        s = (x-np)*v;/* s using v -- change by MM */
-        ej = 2*x*v;
-        v = v*v;
-        for (j=1; ; j++) { /* Taylor series */
-            ej *= v;
-            s1 = s+ej/((j<<1)+1);
-            if (s1==s) /* last term was effectively 0 */
-                return(s1);
-            s = s1;
-        }
-    }
-    /* else:  | x - np |  is not too small */
-    return(x*Math.log(x/np)+np-x);
-}
-
-/**    Computes the log of the error term in Stirling's formula.
- *      For n > 15, uses the series 1/12n - 1/360n^3 + ...
- *      For n <=15, integers or half-integers, uses stored values.
- *      For other n < 15, uses lgamma directly (don't use this to
- *        write lgamma!)
- */
-jstat.stirlerr= function(n) {
-    var S0 = 0.083333333333333333333;
-    var S1 = 0.00277777777777777777778;
-    var S2 = 0.00079365079365079365079365;
-    var S3 = 0.000595238095238095238095238;
-    var S4 = 0.0008417508417508417508417508;
-
-    var sferr_halves = [
-    0.0, /* n=0 - wrong, place holder only */
-    0.1534264097200273452913848,  /* 0.5 */
-    0.0810614667953272582196702,  /* 1.0 */
-    0.0548141210519176538961390,  /* 1.5 */
-    0.0413406959554092940938221,  /* 2.0 */
-    0.03316287351993628748511048, /* 2.5 */
-    0.02767792568499833914878929, /* 3.0 */
-    0.02374616365629749597132920, /* 3.5 */
-    0.02079067210376509311152277, /* 4.0 */
-    0.01848845053267318523077934, /* 4.5 */
-    0.01664469118982119216319487, /* 5.0 */
-    0.01513497322191737887351255, /* 5.5 */
-    0.01387612882307074799874573, /* 6.0 */
-    0.01281046524292022692424986, /* 6.5 */
-    0.01189670994589177009505572, /* 7.0 */
-    0.01110455975820691732662991, /* 7.5 */
-    0.010411265261972096497478567, /* 8.0 */
-    0.009799416126158803298389475, /* 8.5 */
-    0.009255462182712732917728637, /* 9.0 */
-    0.008768700134139385462952823, /* 9.5 */
-    0.008330563433362871256469318, /* 10.0 */
-    0.007934114564314020547248100, /* 10.5 */
-    0.007573675487951840794972024, /* 11.0 */
-    0.007244554301320383179543912, /* 11.5 */
-    0.006942840107209529865664152, /* 12.0 */
-    0.006665247032707682442354394, /* 12.5 */
-    0.006408994188004207068439631, /* 13.0 */
-    0.006171712263039457647532867, /* 13.5 */
-    0.005951370112758847735624416, /* 14.0 */
-    0.005746216513010115682023589, /* 14.5 */
-    0.005554733551962801371038690  /* 15.0 */
-    ];
-
-    var nn;
-
-    if (n <= 15.0) {
-        nn = n + n;
-        if (nn == parseInt(nn)) return(sferr_halves[parseInt(nn)]);
-        return(jstat.lgamma(n + 1.0) - (n + 0.5)*Math.log(n) + n - jstat.LN_SQRT_2PI);
-    }
-
-    nn = n*n;
-    if (n>500) return((S0-S1/nn)/n);
-    if (n> 80) return((S0-(S1-S2/nn)/nn)/n);
-    if (n> 35) return((S0-(S1-(S2-S3/nn)/nn)/nn)/n);
-    /* 15 < n <= 35 : */
-    return((S0-(S1-(S2-(S3-S4/nn)/nn)/nn)/nn)/n);
-}
-
-
-
-/**    The function lgamma computes log|gamma(x)|.  The function
- *    lgammafn_sign in addition assigns the sign of the gamma function
- *    to the address in the second argument if this is not null.
- */
-jstat.lgamma = function(x) {
-    function lgammafn_sign(x, sgn) {
-        var ans, y, sinpiy;
-        var xmax = 2.5327372760800758e+305;
-        var dxrel = 1.490116119384765696e-8;
-
-        // if (xmax == 0) {/* initialize machine dependent constants _ONCE_ */
-        //     xmax = jstat.DBL_MAX/Math.log(jstat.DBL_MAX);/* = 2.533 e305	 for IEEE double */
-        //     dxrel = Math.sqrt(jstat.DBL_EPSILON);/* sqrt(Eps) ~ 1.49 e-8  for IEEE double */
-        // }
-
-        /* For IEEE double precision DBL_EPSILON = 2^-52 = 2.220446049250313e-16 :
-           xmax  = DBL_MAX / log(DBL_MAX) = 2^1024 / (1024 * log(2)) = 2^1014 / log(2)
-           dxrel = sqrt(DBL_EPSILON) = 2^-26 = 5^26 * 1e-26 (is *exact* below !)
-         */
-
-        if (sgn != null) sgn = 1;
-
-        if(isNaN(x)) return x;
-
-        if (x < 0 && (Math.floor(-x) % 2.0) == 0)
-            if (sgn != null) sgn = -1;
-
-        if (x <= 0 && x == jstat.trunc(x)) { /* Negative integer argument */
-            console.warn("Negative integer argument in lgammafn_sign");
-            return Number.POSITIVE_INFINITY;/* +Inf, since lgamma(x) = log|gamma(x)| */
-        }
-
-        y = Math.abs(x);
-
-        if(y <= 10) return Math.log(Math.abs(jstat.gamma(x)));  // TODO: implement jstat.gamma
-
-        if(y > xmax) {
-            console.warn("Illegal arguement passed to lgammafn_sign");
-            return Number.POSITIVE_INFINITY;
-        }
-
-        if(x > 0) {
-            if(x > 1e17) {
-                return (x*(Math.log(x)-1.0));
-            } else if(x > 4934720.0) {
-                return (jstat.LN_SQRT_2PI + (x-0.5) * Math.log(x) - x);
-            } else {
-                return jstat.LN_SQRT_2PI + (x-0.5) * Math.log(x) - x + jstat.lgammacor(x);  // TODO: implement lgammacor
-            }
-        }
-
-        sinpiy = Math.abs(Math.sin(Math.PI * y));
-
-        if(sinpiy == 0) {
-            throw "Should never happen!!";
-        }
-
-        ans = jstat.LN_SQRT_PId2 + (x - 0.5) * Math.log(y) - x - Math.log(sinpiy) - jstat.lgammacor(y);
-
-        if(Math.abs((x-jstat.trunc(x-0.5))* ans / x) < dxrel) {
-            throw "The answer is less than half the precision argument too close to a negative integer";
-        }
-        return ans;
-    }
-
-    return lgammafn_sign(x, null);
-}
-
-jstat.gamma = function(x) {
-    var xbig = 171.624;
-    var p = [
-    -1.71618513886549492533811,
-    24.7656508055759199108314,-379.804256470945635097577,
-    629.331155312818442661052,866.966202790413211295064,
-    -31451.2729688483675254357,-36144.4134186911729807069,
-    66456.1438202405440627855
-    ];
-    var q = [
-    -30.8402300119738975254353,
-    315.350626979604161529144,-1015.15636749021914166146,
-    -3107.77167157231109440444,22538.1184209801510330112,
-    4755.84627752788110767815,-134659.959864969306392456,
-    -115132.259675553483497211
-    ];
-    var c = [
-    -.001910444077728,8.4171387781295e-4,
-    -5.952379913043012e-4,7.93650793500350248e-4,
-    -.002777777777777681622553,.08333333333333333331554247,
-    .0057083835261
-    ];
-
-    var i,n,parity,fact,xden,xnum,y,z,yi,res,sum,ysq;
-
-    parity = (0);
-    fact = 1.0;
-    n = 0;
-    y=x;
-    if(y <= 0.0) {
-        /* -------------------------------------------------------------
-	   Argument is negative
-	   ------------------------------------------------------------- */
-        y = -x;
-        yi = jstat.trunc(y);
-        res = y - yi;
-        if (res != 0.0) {
-            if (yi != jstat.trunc(yi * 0.5) * 2.0)
-                parity = (1);
-            fact = -Math.PI / Math.sin(Math.PI * res);
-            y += 1.0;
-        } else {
-            return(Number.POSITIVE_INFINITY);
-        }
-    }
-    /* -----------------------------------------------------------------
-       Argument is positive
-       -----------------------------------------------------------------*/
-    if (y < jstat.DBL_EPSILON) {
-        /* --------------------------------------------------------------
-	   Argument < EPS
-	   -------------------------------------------------------------- */
-        if (y >= jstat.DBL_MIN) {
-            res = 1.0 / y;
-        } else {
-            return(Number.POSITIVE_INFINITY);
-        }
-    } else if (y < 12.0) {
-        yi = y;
-        if (y < 1.0) {
-            /* ---------------------------------------------------------
-	       EPS < argument < 1
-	       --------------------------------------------------------- */
-            z = y;
-            y += 1.0;
-        } else {
-            /* -----------------------------------------------------------
-	       1 <= argument < 12, reduce argument if necessary
-	       ----------------------------------------------------------- */
-            n = parseInt(y) - 1;
-            y -= parseFloat(n);
-            z = y - 1.0;
-        }
-        /* ---------------------------------------------------------
-	   Evaluate approximation for 1. < argument < 2.
-	   ---------------------------------------------------------*/
-        xnum = 0.0;
-        xden = 1.0;
-        for (i = 0; i < 8; ++i) {
-            xnum = (xnum + p[i]) * z;
-            xden = xden * z + q[i];
-        }
-        res = xnum / xden + 1.0;
-        if (yi < y) {
-            /* --------------------------------------------------------
-	       Adjust result for case  0. < argument < 1.
-	       -------------------------------------------------------- */
-            res /= yi;
-        } else if (yi > y) {
-            /* ----------------------------------------------------------
-	       Adjust result for case  2. < argument < 12.
-	       ---------------------------------------------------------- */
-            for (i = 0; i < n; ++i) {
-                res *= y;
-                y += 1.0;
-            }
-        }
-    } else {
-        /* -------------------------------------------------------------
-	   Evaluate for argument >= 12.,
-	   ------------------------------------------------------------- */
-        if (y <= xbig) {
-            ysq = y * y;
-            sum = c[6];
-            for (i = 0; i < 6; ++i) {
-                sum = sum / ysq + c[i];
-            }
-            sum = sum / y - y + jstat.LN_SQRT_2PI;
-            sum += (y - 0.5) * Math.log(y);
-            res = Math.exp(sum);
-        } else {
-            return(Number.POSITIVE_INFINITY);
-        }
-    }
-    /* ----------------------------------------------------------------------
-       Final adjustments and return
-       ----------------------------------------------------------------------*/
-    if (parity)
-        res = -res;
-    if (fact != 1.0)
-        res = fact / res;
-    return res;
-}
-
-/**    Compute the log gamma correction factor for x >= 10 so that
- *
- *    log(gamma(x)) = .5*log(2*pi) + (x-.5)*log(x) -x + lgammacor(x)
- *
- *    [ lgammacor(x) is called	Del(x)	in other contexts (e.g. dcdflib)]
- */
-jstat.lgammacor = function(x) {
-    var algmcs = [
-    +.1666389480451863247205729650822e+0,
-    -.1384948176067563840732986059135e-4,
-    +.9810825646924729426157171547487e-8,
-    -.1809129475572494194263306266719e-10,
-    +.6221098041892605227126015543416e-13,
-    -.3399615005417721944303330599666e-15,
-    +.2683181998482698748957538846666e-17,
-    -.2868042435334643284144622399999e-19,
-    +.3962837061046434803679306666666e-21,
-    -.6831888753985766870111999999999e-23,
-    +.1429227355942498147573333333333e-24,
-    -.3547598158101070547199999999999e-26,
-    +.1025680058010470912000000000000e-27,
-    -.3401102254316748799999999999999e-29,
-    +.1276642195630062933333333333333e-30
-    ];
-
-    var tmp;
-    var nalgm = 5;
-    var xbig = 94906265.62425156;
-    var xmax = 3.745194030963158e306;
-
-    if(x < 10) {
-        return Number.NaN;
-    } else if (x >= xmax) {
-        throw "Underflow error in lgammacor";
-    } else if (x < xbig) {
-        tmp = 10 / x;
-        return jstat.chebyshev(tmp*tmp*2-1,algmcs,nalgm) / x;
-    }
-    return 1 / (x*12);
-}
-
-/*
- * Incomplete Beta function
- */
-jstat.incompleteBeta = function(a, b, x) {
-    /*
-     * Used by incompleteBeta: Evaluates continued fraction for incomplete
-     * beta function by modified Lentz's method.
-     */
-    function betacf(a, b, x) {
-        var MAXIT = 100;
-        var EPS = 3.0e-12;
-        var FPMIN = 1.0e-30;
-
-        var m,m2,aa,c,d,del,h,qab,qam,qap;
-
-        qab=a+b;
-        qap=a+1.0;
-        qam=a-1.0;
-        c=1.0;
-        d=1.0-qab*x/qap;
-
-        if(Math.abs(d) < FPMIN) {
-            d=FPMIN;
-        }
-
-        d = 1.0/d;
-        h=d;
-        for(m = 1; m <= MAXIT; m++) {
-            m2=2*m;
-            aa=m*(b-m)*x/((qam+m2)*(a+m2));
-            d=1.0+aa*d;
-            if(Math.abs(d) < FPMIN) {
-                d = FPMIN;
-            }
-            c=1.0+aa/c;
-            if(Math.abs(c) < FPMIN) {
-                c = FPMIN;
-            }
-            d=1.0/d;
-            h *= d*c;
-            aa = -(a+m)*(qab+m)*x/((a+m2) * (qap+m2));
-            d=1.0+aa*d;
-            if(Math.abs(d) < FPMIN) {
-                d = FPMIN;
-            }
-            c=1.0+aa/c;
-            if(Math.abs(c) < FPMIN) {
-                c=FPMIN;
-            }
-            d=1.0/d;
-            del=d*c;
-            h *= del;
-            if(Math.abs(del-1.0) < EPS) {
-                // are we done?
-                break;
-            }
-        }
-        if(m > MAXIT) {
-            console.warn("a or b too big, or MAXIT too small in betacf: " + a + ", " + b + ", " + x + ", " + h);
-            return h;
-        }
-        if(isNaN(h)) {
-            console.warn(a + ", " + b + ", " + x);
-        }
-        return h;
-    }
-
-    var bt;
-
-    if(x < 0.0 || x > 1.0) {
-        throw "bad x in routine incompleteBeta";
-    }
-    if(x == 0.0 || x == 1.0) {
-        bt = 0.0;
-    } else {
-        bt = Math.exp(jstat.lgamma(a+b) - jstat.lgamma(a) - jstat.lgamma(b) + a * Math.log(x)+ b * Math.log(1.0-x));
-    }
-    if(x < (a + 1.0)/(a+b+2.0)) {
-        return bt * betacf(a,b,x)/a;
-    } else {
-        return 1.0-bt*betacf(b,a,1.0-x)/b;
-    }
-}
-
-/**   Evaluates the n-term Chebyshev series
- *    "a" at "x".
- */
-jstat.chebyshev = function(x, a, n) {
-    var b0, b1, b2, twox;
-    var i;
-
-    if (n < 1 || n > 1000) return Number.NaN;
-
-    if (x < -1.1 || x > 1.1) return Number.NaN;
-
-    twox = x * 2;
-    b2 = b1 = 0;
-    b0 = 0;
-    for (i = 1; i <= n; i++) {
-        b2 = b1;
-        b1 = b0;
-        b0 = twox * b1 - b2 + a[n - i];
-    }
-    return (b0 - b2) * 0.5;
-}
-
-jstat.fmin2 = function(x, y) {
-    return (x < y) ? x : y;
-}
-
-jstat.log1p = function(x) {
-    // http://kevin.vanzonneveld.net
-    // +   original by: Brett Zamir (http://brett-zamir.me)
-    // %          note 1: Precision 'n' can be adjusted as desired
-    // *     example 1: log1p(1e-15);
-    // *     returns 1: 9.999999999999995e-16
-
-    var ret = 0,
-    n = 50; // degree of precision
-    if (x <= -1) {
-        return Number.NEGATIVE_INFINITY; // JavaScript style would be to return Number.NEGATIVE_INFINITY
-    }
-    if (x < 0 || x > 1) {
-        return Math.log(1 + x);
-    }
-    for (var i = 1; i < n; i++) {
-        if ((i % 2) === 0) {
-            ret -= Math.pow(x, i) / i;
-        } else {
-            ret += Math.pow(x, i) / i;
-        }
-    }
-    return ret;
-}
-
-jstat.expm1 = function(x) {
-    var y, a  = Math.abs(x);
-    if(a < jstat.DBL_EPSILON) return x;
-    if(a > 0.697) return Math.exp(x) - 1; /* negligable cancellation */
-    if(a > 1e-8) {
-        y = Math.exp(x) - 1;
-    } else {
-        y = (x / 2 + 1) * x;
-    }
-
-    /* Newton step for solving   log(1 + y) = x   for y : */
-    /* WARNING: does not work for y ~ -1: bug in 1.5.0 */
-    y -= (1 + y) * (jstat.log1p(y) - x);
-    return y;
-}
-
-jstat.logBeta = function(a, b) {
-    var corr, p, q;
-    p = q = a;
-    if(b < p) p = b;/* := min(a,b) */
-    if(b > q) q = b;/* := max(a,b) */
-
-    /* both arguments must be >= 0 */
-    if (p < 0) {
-        console.warn('Both arguements must be >= 0');
-        return Number.NaN;
-    }
-    else if (p == 0) {
-        return Number.POSITIVE_INFINITY;
-    }
-    else if (!jstat.isFinite(q)) { /* q == +Inf */
-        return Number.NEGATIVE_INFINITY;
-    }
-
-    if (p >= 10) {
-        /* p and q are big. */
-        corr = jstat.lgammacor(p) + jstat.lgammacor(q) - jstat.lgammacor(p + q);
-        return Math.log(q) * -0.5 + jstat.LN_SQRT_2PI + corr
-        + (p - 0.5) * Math.log(p / (p + q)) + q * jstat.log1p(-p / (p + q));
-    }
-    else if (q >= 10) {
-        /* p is small, but q is big. */
-        corr = jstat.lgammacor(q) - jstat.lgammacor(p + q);
-        return jstat.lgamma(p) + corr + p - p * Math.log(p + q)
-        + (q - 0.5) * jstat.log1p(-p / (p + q));
-    }
-    else
-        /* p and q are small: p <= q < 10. */
-        return Math.log(jstat.gamma(p) * (jstat.gamma(q) / jstat.gamma(p + q)));
-}
-
-jstat.dbinom_raw = function(x, n, p, q, give_log) {
-    if(give_log == null) give_log = false;
-    var lf, lc;
-
-    if(p == 0) {
-        if(x == 0) {
-            // R_D__1
-            return (give_log) ? 0.0 : 1.0;
-        } else {
-            // R_D__0
-            return (give_log) ? Number.NEGATIVE_INFINITY : 0.0;
-        }
-    }
-    if(q == 0) {
-        if(x == n) {
-            // R_D__1
-            return (give_log) ? 0.0 : 1.0;
-        } else {
-            // R_D__0
-            return (give_log) ? Number.NEGATIVE_INFINITY : 0.0;
-        }
-    }
-
-    if (x == 0) {
-        if(n == 0) return (give_log) ? 0.0 : 1.0;   //R_D__1;
-        lc = (p < 0.1) ? -jstat.bd0(n,n*q) - n*p : n*Math.log(q);
-        return ( give_log ) ? lc : Math.exp(lc); //R_D_exp(lc)
-    }
-
-    if (x == n) {
-        lc = (q < 0.1) ? -jstat.bd0(n,n*p) - n*q : n*Math.log(p);
-        return ( give_log ) ? lc : Math.exp(lc); //R_D_exp(lc)
-    }
-
-    if (x < 0 || x > n) return (give_log) ? Number.NEGATIVE_INFINITY : 0.0; // R_D__0;
-
-    /* n*p or n*q can underflow to zero if n and p or q are small.  This
-       used to occur in dbeta, and gives NaN as from R 2.3.0.  */
-    lc = jstat.stirlerr(n) - jstat.stirlerr(x) - jstat.stirlerr(n-x) - jstat.bd0(x,n*p) - jstat.bd0(n-x,n*q);
-
-    /* f = (M_2PI*x*(n-x))/n; could overflow or underflow */
-    /* Upto R 2.7.1:
-     * lf = log(M_2PI) + log(x) + log(n-x) - log(n);
-     * -- following is much better for  x << n : */
-    lf = Math.log(jstat.TWO_PI) + Math.log(x) + jstat.log1p(- x/n);
-
-    return (give_log) ? lc - 0.5*lf : Math.exp(lc - 0.5*lf); // R_D_exp(lc - 0.5*lf);
-}
-
-jstat.max = function(values) {
-    var max = Number.NEGATIVE_INFINITY;
-    for(var i = 0; i < values.length; i++) {
-        if(values[i] > max) {
-            max = values[i];
-        }
-    }
-    return max;
-}
-
-/******************************************************************************/
-/*                      Probability Distributions                             */
-/******************************************************************************/
-
-/**
- * Range class
- */
-var Range = Class.extend({
-    init: function(min, max, numPoints) {
-        this._minimum = parseFloat(min);
-        this._maximum = parseFloat(max);
-        this._numPoints = parseFloat(numPoints);
-    },
-    getMinimum: function() {
-        return this._minimum;
-    },
-    getMaximum: function() {
-        return this._maximum;
-    },
-    getNumPoints: function() {
-        return this._numPoints;
-    },
-    getPoints: function() {
-        var results = [];
-        var x = this._minimum;
-        var step = (this._maximum-this._minimum)/(this._numPoints-1);
-        for(var i = 0; i < this._numPoints; i++) {
-            results[i] = parseFloat(x.toFixed(6));
-            x += step;
-        }
-        return results;
-    }
+//To regress, simply build X matrix
+//(append column of 1's) using
+//buildxmatrix and build the Y
+//matrix using buildymatrix
+//(simply the transpose)
+//and run regress.
+
+
+
+//Regressions
+jStat.extend({
+	buildxmatrix: function(){
+	//Parameters will be passed in as such
+	//(array1,array2,array3,...)
+	//as (x1,x2,x3,...)
+	//needs to be (1,x1,x2,x3,...)
+	var matrixRows = new Array(arguments.length);
+	for(var i=0;i<arguments.length;i++){
+		var array = [1]
+		matrixRows[i]= array.concat(arguments[i])
+	}
+	return jStat(matrixRows);
+	
+	},
+	
+	builddxmatrix: function(){
+	//Paramters will be passed in as such
+	//([array1,array2,...]
+	var matrixRows = new Array(arguments[0].length);
+	for(var i=0;i<arguments[0].length;i++){
+	var array = [1]
+		matrixRows[i]= array.concat(arguments[0][i])
+	}
+	return jStat(matrixRows);
+	
+	},
+	
+	buildjxmatrix: function(jMat){
+	//Builds from jStat Matrix
+	var pass = new Array(jMat.length)
+	for(var i=0;i<jMat.length;i++){
+		pass[i] = jMat[i];
+	}
+	return jStat.builddxmatrix(pass);
+	
+	},
+	
+	buildymatrix: function(array){
+		return jStat(array).transpose();
+	},
+	
+	buildjymatrix: function(jMat){
+		return jMat.transpose();
+	},
+	
+	matrixmult: function(A,B){
+		if (A.cols() == B.rows()) {
+		if(B.rows()>1){
+			var result = [];
+				for (var i = 0; i < A.rows(); i++) {
+					result[i] = [];
+					for (var j = 0; j < B.cols(); j++) {
+					var sum = 0;
+						for (var k = 0; k < A.cols(); k++) {
+							sum += A.toArray()[i][k] * B.toArray()[k][j];
+						}
+					result[i][j] = sum;
+					}
+				}
+			return jStat(result);
+		}
+		var result = [];
+		for (var i = 0; i < A.rows(); i++) {
+			result[i] = [];
+			for (var j = 0; j < B.cols(); j++) {
+				var sum = 0;
+				for (var k = 0; k < A.cols(); k++) {
+					sum += A.toArray()[i][k] * B.toArray()[j];
+				}
+			result[i][j] = sum;
+			}
+		}
+		return jStat(result);
+	}
+	
+	},
+	
+	//regress and regresst to be fixed
+	
+	regress: function(jMatX,jMatY){
+		print("regressin!");
+		print(jMatX.toArray());
+		var innerinv = jStat.xtranspxinv(jMatX)
+		print(innerinv);
+		var xtransp = jMatX.transpose();
+		var next = jStat.matrixmult(jStat(innerinv),xtransp);
+		return jStat.matrixmult(next,jMatY);
+		
+	},
+	
+	regresst: function(jMatX,jMatY,sides){
+		beta = jStat.regress(jMatX,jMatY);
+		xtransp = jMatX.transpose();
+		var ones = new Array(jMatX.length);
+		for(var i=0; i<jMatX.length;i++){
+			ones[i]=[1];
+		}
+		ones = jStat(ones);
+		var onest = ones.transpose();
+		var onesquare = jStat.matrixmult(ones,onest);
+		var xm = jStat.matrixmult(onesquare,jMatX);
+		xm = xm.divide(xm.length)
+		var xdev = jStat.matrixsubtract(jMatX,xm);
+		var varcovar = jStat.xtranspx(xdev);
+		varcovar = varcovar.divide(xdev.length);
+		var sds = new Array(xtransp.length)
+		var ts = new Array(xtransp.length)
+		var ps = new Array(xtransp.length)
+		var compile = new Array(xtransp.length)
+		for(var i=1; i<beta.length;i++){
+			sds[i]=Math.sqrt(varcovar[i][i])
+			print(sds[i])
+			ts[i]=jStat.tscore(beta[i],0,sds[i],xdev.length);
+			ps[i]=jStat.ttest(ts[i],xtransp.length,sides)
+			compile[i]=[beta[i],sds[i],ts[i],ps[i]]
+		}
+		return compile
+	},
+	
+	xtranspx : function(jMatX){
+		return jStat.matrixmult(jMatX.transpose(),jMatX);
+	},
+	
+
+	xtranspxinv: function(jMatX){
+		var inner = jStat.matrixmult(jMatX.transpose(),jMatX);
+		var innerinv = jStat.inv(inner);
+		return innerinv;
+	},
+	
+	
+	samplesize: function(jMatX){
+		return jMatX[0].length;
+	},
+	
+	residuals: function(jMatX,jMatY){
+		residuals = new Array(xtransp.length)
+		var yhat=0;
+		for(var i=0; i<jMatX.length;i++){
+		yhat=0
+			for(var j=0; j<xtransp.length;j++){
+				yhat=yhat + beta[j]*jMatX[i][j];
+			}
+		residuals[i]=jMatY[i]-yhat
+		}
+		return residuals
+	},
+	
+	ssr: function(jMatX,jMatY){
+		residuals = jStat.residuals(jMatX,jMatY);
+		var SSR=0
+		for(var i=0; i<xtransp.length-1;i++){
+			SSR= SSR + Math.pow(residuals[i],2)
+		}
+	},
+	
+	sse: function(jMatX,jMatY){
+		ybar = jStat.mean(jMatY.toArray)
+		errors = new Array(xtransp.length)
+		var yhat=0;
+		for(var i=0; i<jMatX.length;i++){
+		yhat=0
+			for(var j=0; j<xtransp.length;j++){
+				yhat=yhat + beta[j]*jMatX[i][j];
+			}
+		errors[i]=yhat-ybar
+		}
+		var sse=0
+		for(var i=0; i<xtransp.length-1;i++){
+			sse= sse + Math.pow(errors[i],2)
+		}
+		return sse
+	
+	},
+	
+	rsq: function(jMatX,jMatY){
+		return jStat.sse(jMatX,jMatY) + jStat.ssr(jMatX,jMatY);
+	
+	},
+	
+	matrixsubtract: function(A,B){
+	var ans = new Array(A.length);
+	for(var i=0;i<A.length;i++){
+		ans[i] = new Array(A[i].length);
+		for(var j=0;j<A[i].length;j++){
+			ans[i][j]=A[i][j]-B[i][j];
+		}
+	}
+	return jStat(ans);
+	},
+	
+})
+*/
+// =========================== special.js =============================
+// Special functions //
+(function( jStat, Math ) {
+
+// extending static jStat methods
+jStat.extend({
+
+	// Log-gamma function
+	gammaln : function( x ) {
+		var j = 0,
+			cof = [
+				76.18009172947146, -86.50532032941677, 24.01409824083091,
+				-1.231739572450155, 0.1208650973866179e-2, -0.5395239384953e-5
+			],
+			ser = 1.000000000190015,
+			xx, y, tmp;
+		tmp = ( y = xx = x ) + 5.5;
+		tmp -= ( xx + 0.5 ) * Math.log( tmp );
+		for ( ; j < 6; j++ ) ser += cof[j] / ++y;
+		return Math.log( 2.5066282746310005 * ser / xx) - tmp;
+	},
+
+	// gamma of x
+	gammafn : function( x ) {
+		var p = [
+				-1.716185138865495, 24.76565080557592, -379.80425647094563,
+				629.3311553128184, 866.9662027904133, -31451.272968848367,
+				-36144.413418691176, 66456.14382024054
+			],
+			q = [
+				-30.8402300119739, 315.35062697960416, -1015.1563674902192,
+				-3107.771671572311, 22538.118420980151, 4755.8462775278811,
+				-134659.9598649693, -115132.2596755535
+			],
+			fact = false,
+			n = 0,
+			xden = 0,
+			xnum = 0,
+			y = x,
+			i, z, yi, res, sum, ysq;
+		if( y <= 0 ) {
+			res = y % 1 + 3.6e-16;
+			if ( res ) {
+				fact = (!( y & 1 ) ? 1 : -1 ) * Math.PI / Math.sin( Math.PI * res );
+				y = 1 - y;
+			} else {
+				return Infinity;
+			}
+		}
+		yi = y;
+		if ( y < 1 ) {
+			z = y++;
+		} else {
+			z = ( y -= n = ( y | 0 ) - 1 ) - 1;
+		}
+		for ( i = 0; i < 8; ++i ) {
+			xnum = ( xnum + p[i] ) * z;
+			xden = xden * z + q[i];
+		}
+		res = xnum / xden + 1;
+		if ( yi < y ) {
+			res /= yi;
+		} else if ( yi > y ) {
+			for ( i = 0; i < n; ++i ) {
+				res *= y;
+				y++;
+			}
+		}
+		if ( fact ) {
+			res = fact / res;
+		}
+		return res;
+	},
+
+	// lower incomplete gamma function P(a,x)
+	gammap : function( a, x ) {
+		var aln = jStat.gammaln( a ),
+			ap = a,
+			sum = 1 / a,
+			del = sum,
+			b = x + 1 - a,
+			c = 1 / 1.0e-30,
+			d = 1 / b,
+			h = d,
+			i = 1,
+			// calculate maximum number of itterations required for a
+			ITMAX = -~( Math.log(( a >= 1 ) ? a : 1 / a ) * 8.5 + a * 0.4 + 17 ),
+			an, endval;
+		if ( x < 0 || a <= 0 ) {
+			return NaN;
+		} else if ( x < a + 1 ) {
+			for ( ; i <= ITMAX; i++ ) {
+				sum += del *= x / ++ap;
+			}
+			return sum * Math.exp( -x + a * Math.log( x ) - ( aln ));
+		}
+		for ( ; i <= ITMAX; i++ ) {
+			an = -i * ( i - a );
+			b += 2;
+			d = an * d + b;
+			c = b + an / c;
+			d = 1 / d;
+			h *= d * c;
+		}
+		return 1 - h * Math.exp( -x + a * Math.log( x ) - ( aln ));
+	},
+
+	// natural log factorial of n
+	factorialln : function( n ) {
+		return n < 0 ? NaN : jStat.gammaln( n + 1 );
+	},
+
+	// factorial of n
+	factorial : function( n ) {
+		return n < 0 ? NaN : jStat.gammafn( n + 1 );
+	},
+
+	// combinations of n, m
+	combination : function( n, m ) {
+		// make sure n or m don't exceed the upper limit of usable values
+		return ( n > 170 || m > 170 ) ?
+			Math.exp( jStat.combinationln( n, m )) :
+		( jStat.factorial( n ) / jStat.factorial( m )) / jStat.factorial( n - m );
+	},
+	
+	combinationln : function( n, m ){
+		return  jStat.factorialln( n ) - jStat.factorialln( m ) - jStat.factorialln( n - m );
+	},
+
+	// permutations of n, m
+	permutation : function( n, m ) {
+		return jStat.factorial( n ) / jStat.factorial( n - m );
+	},
+
+	// beta function
+	betafn : function( x, y ) {
+		// ensure arguments are positive
+		if ( x <= 0 || y <= 0 ) return undefined;
+		// make sure x + y doesn't exceed the upper limit of usable values
+		return ( x + y > 170 ) ?
+			Math.exp( jStat.betaln( x, y )) :
+		jStat.gammafn( x ) * jStat.gammafn( y ) / jStat.gammafn( x + y );
+	},
+	
+	// natural logarithm of beta function
+	betaln : function( x, y ) {
+		return jStat.gammaln( x ) + jStat.gammaln( y ) - jStat.gammaln( x + y );
+	},
+
+	// evaluates the continued fraction for incomplete beta function by modified Lentz's method.
+	betacf : function( x, a, b ) {
+		var fpmin = 1e-30,
+			m = 1,
+			m2, aa, c, d, del, h, qab, qam, qap;
+		// These q's will be used in factors that occur in the coefficients
+		qab = a + b;
+		qap = a + 1;
+		qam = a - 1;
+		c = 1;
+		d = 1 - qab * x / qap;
+		if( Math.abs( d ) < fpmin ) d = fpmin;
+		d = 1 / d;
+		h = d;
+		for ( ; m <= 100; m++ ) {
+			m2 = 2 * m;
+			aa = m * ( b - m ) * x / ( ( qam + m2 ) * ( a + m2 ) );
+			// One step (the even one) of the recurrence
+			d = 1 + aa * d;
+			if( Math.abs( d ) < fpmin ) d = fpmin;
+			c = 1 + aa / c;
+			if( Math.abs( c ) < fpmin ) c = fpmin;
+			d = 1 / d;
+			h *= d * c;
+			aa = -( a + m ) * ( qab + m ) * x / ( ( a + m2 ) * ( qap + m2 ) );
+			// Next step of the recurrence (the odd one)
+			d = 1 + aa * d;
+			if( Math.abs( d ) < fpmin ) d = fpmin;
+			c = 1 + aa / c;
+			if( Math.abs( c ) < fpmin ) c = fpmin;
+			d = 1 / d;
+			del = d * c;
+			h *= del;
+			if( Math.abs( del - 1.0 ) < 3e-7 ) break;
+		}
+		return h;
+	},
+
+	// Returns the inverse incomplte gamma function
+	gammapinv : function( p, a ) {
+		var j = 0,
+			a1 = a - 1,
+			EPS = 1e-8,
+			gln = jStat.gammaln( a ),
+			x, err, t, u, pp, lna1, afac;
+		if( p >= 1 ) return Math.max( 100, a + 100 * Math.sqrt( a ) );
+		if( p <= 0 ) return 0;
+		if( a > 1 ) {
+			lna1 = Math.log( a1 );
+			afac = Math.exp( a1 * ( lna1 - 1 ) - gln );
+			pp = ( p < 0.5 ) ? p : 1 - p;
+			t = Math.sqrt( -2 * Math.log( pp ));
+			x = ( 2.30753 + t * 0.27061 ) / ( 1 + t * ( 0.99229 + t * 0.04481 )) - t;
+			if( p < 0.5 ) x = -x;
+			x = Math.max( 1e-3, a * Math.pow( 1 - 1 / ( 9 * a ) - x / ( 3 * Math.sqrt( a )), 3 ));
+		} else {
+			t = 1 - a * ( 0.253 + a * 0.12 );
+			if( p < t ) x = Math.pow( p / t, 1 / a);
+			else x = 1 - Math.log( 1 - ( p - t ) / ( 1 - t ));
+		}
+		for( ; j < 12; j++ ) {
+			if( x <= 0 ) return 0;
+			err = jStat.gammap( a, x ) - p;
+			if( a > 1 ) t = afac * Math.exp( -( x - a1 ) + a1 * ( Math.log( x ) - lna1 ));
+			else t = Math.exp( -x + a1 * Math.log( x ) - gln );
+			u = err / t;
+			x -= ( t = u / ( 1 - 0.5 * Math.min( 1, u * ( ( a - 1 ) / x - 1 ))));
+			if( x <= 0 ) x = 0.5 * ( x + t );
+			if( Math.abs( t ) < EPS * x ) break;
+		}
+		return x;
+	},
+
+	// Returns the error function erf(x)
+	erf : function( x ) {
+		var cof = [
+				-1.3026537197817094, 6.4196979235649026e-1, 1.9476473204185836e-2,
+				-9.561514786808631e-3, -9.46595344482036e-4, 3.66839497852761e-4,
+				4.2523324806907e-5, -2.0278578112534e-5, -1.624290004647e-6,
+				1.303655835580e-6, 1.5626441722e-8, -8.5238095915e-8,
+				6.529054439e-9, 5.059343495e-9, -9.91364156e-10,
+				-2.27365122e-10, 9.6467911e-11, 2.394038e-12,
+				-6.886027e-12, 8.94487e-13, 3.13092e-13,
+				-1.12708e-13, 3.81e-16, 7.106e-15,
+				-1.523e-15, -9.4e-17, 1.21e-16,
+				-2.8e-17
+			],
+			j = cof.length - 1,
+			isneg = false,
+			d = 0,
+			dd = 0,
+			t, ty, tmp, res;
+		if( x < 0 ) {
+			x = -x;
+			isneg = true;
+		}
+		t = 2 / ( 2 + x );
+		ty = 4 * t - 2;
+		for( ; j > 0; j-- ) {
+			tmp = d;
+			d = ty * d - dd + cof[j];
+			dd = tmp;
+		}
+		res = t * Math.exp( -x*x + 0.5 * ( cof[0] + ty * d ) - dd );
+		return ( isneg ) ? res - 1 : 1 - res;
+	},
+
+	// Returns the complmentary error function erfc(x)
+	erfc : function( x ) {
+		return 1 - jStat.erf( x );
+	},
+
+	// Returns the inverse of the complementary error function
+	erfcinv : function( p ) {
+		var j = 0,
+			x, err, t, pp;
+		if( p >= 2 ) return -100;
+		if( p <= 0 ) return 100;
+		pp = ( p < 1 ) ? p : 2 - p;
+		t = Math.sqrt( -2 * Math.log( pp / 2 ));
+		x = -0.70711 * (( 2.30753 + t * 0.27061 ) / ( 1 + t * ( 0.99229 + t * 0.04481)) - t );
+		for( ; j < 2; j++ ) {
+			err = jStat.erfc( x ) - pp;
+			x += err / ( 1.12837916709551257 * Math.exp( -x * x ) - x * err );
+		}
+		return ( p < 1 ) ? x : -x;
+	},
+
+	// Returns the inverse of the incomplete beta function
+	ibetainv : function( p, a, b ) {
+		var EPS = 1e-8,
+			a1 = a - 1,
+			b1 = b - 1,
+			j = 0,
+			lna, lnb, pp, t, u, err, x, al, h, w, afac;
+		if( p <= 0 ) return 0;
+		if( p >= 1 ) return 1;
+		if( a >= 1 && b >= 1 ) {
+			pp = ( p < 0.5 ) ? p : 1 - p;
+			t = Math.sqrt( -2 * Math.log( pp ));
+			x = ( 2.30753 + t * 0.27061 ) / ( 1 + t* ( 0.99229 + t * 0.04481 )) - t;
+			if( p < 0.5 ) x = -x;
+			al = ( x * x - 3 ) / 6;
+			h = 2 / ( 1 / ( 2 * a - 1 )  + 1 / ( 2 * b - 1 ));
+			w = ( x * Math.sqrt( al + h ) / h ) - ( 1 / ( 2 * b - 1 ) - 1 / ( 2 * a - 1 )) * ( al + 5 / 6 - 2 / ( 3 * h ));
+			x = a / ( a + b * Math.exp( 2 * w ));
+		} else {
+			lna = Math.log( a / ( a + b ));
+			lnb = Math.log( b / ( a + b ));
+			t = Math.exp( a * lna ) / a;
+			u = Math.exp( b * lnb ) / b;
+			w = t + u;
+			if( p < t / w) x = Math.pow( a * w * p, 1 / a );
+			else x = 1 - Math.pow( b * w * ( 1 - p ), 1 / b );
+		}
+		afac = -jStat.gammaln( a ) - jStat.gammaln( b ) + jStat.gammaln( a + b );
+		for( ; j < 10; j++ ) {
+			if( x === 0 || x === 1) return x;
+			err = jStat.ibeta( x, a, b ) - p;
+			t = Math.exp( a1 * Math.log( x ) + b1 * Math.log( 1 - x ) + afac );
+			u = err / t;
+			x -= ( t = u / ( 1 - 0.5 * Math.min( 1, u * ( a1 / x - b1 / ( 1 - x )))));
+			if( x <= 0 ) x = 0.5 * ( x + t );
+			if( x >= 1 ) x = 0.5 * ( x + t + 1 );
+			if( Math.abs( t ) < EPS * x && j > 0 ) break;
+		}
+		return x;
+	},
+
+	// Returns the incomplete beta function I_x(a,b)
+	ibeta : function( x, a, b ) {
+		// Factors in front of the continued fraction.
+		var bt = ( x === 0 || x === 1 ) ?  0 :
+			Math.exp(jStat.gammaln( a + b ) - jStat.gammaln( a ) -
+			jStat.gammaln( b ) + a * Math.log( x ) + b *
+			Math.log( 1 - x ));
+		if( x < 0 || x > 1 ) return false;
+		if( x < ( a + 1 ) / ( a + b + 2 ) )
+			// Use continued fraction directly.
+			return bt * jStat.betacf( x, a, b ) / a;
+		// else use continued fraction after making the symmetry transformation.
+		return 1 - bt * jStat.betacf( 1 - x, b, a ) / b;
+	},
+
+	// Returns a normal deviate (mu=0, sigma=1).
+	// If n and m are specified it returns a object of normal deviates.
+	randn : function( n, m ) {
+		var u, v, x, y, q, mat;
+		if ( !m ) m = n;
+		if( n ) {
+			return jStat.create( n, m, function() { return jStat.randn(); });
+		}
+		do {
+			u = Math.random();
+			v = 1.7156 * ( Math.random() - 0.5 );
+			x = u - 0.449871;
+			y = Math.abs( v ) + 0.386595;
+			q = x*x + y * ( 0.19600 * y - 0.25472 * x );
+		} while( q > 0.27597 && ( q > 0.27846 || v*v > -4 * Math.log( u ) * u*u ));
+		return v / u;
+	},
+
+	// Returns a gamma deviate by the method of Marsaglia and Tsang.
+	randg : function( shape, n, m ) {
+		var oalph = shape,
+			a1, a2, u, v, x, mat;
+		if ( !m ) m = n;
+		if ( !shape ) shape = 1;
+		if( n ) {
+			mat = jStat.zeros( n,m );
+			mat.alter(function() { return jStat.randg( shape ); });
+			return mat;
+		}
+		if( shape < 1 ) shape += 1;
+		a1 = shape - 1 / 3;
+		a2 = 1 / Math.sqrt( 9 * a1 );
+		do {
+			do {
+				x = jStat.randn();
+				v = 1 + a2 * x;
+			} while( v <= 0 );
+			v = v * v * v;
+			u = Math.random();
+		} while( u > 1 - 0.331 * Math.pow( x, 4 ) &&
+			Math.log( u ) > 0.5 * x*x + a1 * ( 1 - v + Math.log( v ) ));
+		// alpha > 1
+		if( shape == oalph ) return a1 * v;
+		// alpha < 1
+		do { u = Math.random(); } while( u === 0 );
+		return Math.pow( u, 1 / oalph ) * a1 * v;
+	}
 });
 
-Range.validate = function(range) {
-    if( ! range instanceof Range) {
-        return false;
-    }
-    if(isNaN(range.getMinimum()) || isNaN(range.getMaximum()) || isNaN(range.getNumPoints()) || range.getMaximum() < range.getMinimum() || range.getNumPoints() <= 0) {
-        return false;
-    }
-    return true;
-}
+// making use of static methods on the instance
+(function( funcs ) {
+	for ( var i = 0; i < funcs.length; i++ ) (function( passfunc ) {
+		jStat.fn[ passfunc ] = function() {
+			return jStat( jStat.map( this, function( value ) { return jStat[ passfunc ]( value ); }));
+		};
+	})( funcs[i] );
+})( 'gammaln gammafn factorial factorialln'.split( ' ' ));
 
-var ContinuousDistribution = Class.extend({
-    init: function(name) {
-        this._name = name;
-    },
-    toString: function() {
-        return this._string;
-    },
-    getName: function() {
-        return this._name;
-    },
-    getClassName: function() {
-        return this._name + 'Distribution';
-    },
-    density: function(valueOrRange) {
-        if(!isNaN(valueOrRange)) {
-            // single value
-            return parseFloat(this._pdf(valueOrRange).toFixed(15));
-        } else if (Range.validate(valueOrRange)) {
-            // multiple values
-            var points = valueOrRange.getPoints();
+(function( funcs ) {
+	for ( var i = 0; i < funcs.length; i++ ) (function( passfunc ) {
+		jStat.fn[ passfunc ] = function() {
+			return jStat( jStat[ passfunc ].apply( null, arguments ));
+		};
+	})( funcs[i] );
+})( 'randn'.split( ' ' ));
 
-            var result = [];
-            // For each point in the range
-            for(var i = 0; i < points.length; i++) {
-                result[i] = parseFloat(this._pdf(points[i]));
-            }
-            return result;
-        } else {
-            // neither value or range
-            throw "Invalid parameter supplied to " + this.getClassName() + ".density()";
-        }
-    },
-    cumulativeDensity: function(valueOrRange) {
-        if(!isNaN(valueOrRange)) {
-            // single value
-            return parseFloat(this._cdf(valueOrRange).toFixed(15));
-        } else if (Range.validate(valueOrRange)) {
-            // multiple values
-            var points = valueOrRange.getPoints();
-            var result = [];
-            // For each point in the range
-            for(var i = 0; i < points.length; i++) {
-                result[i] = parseFloat(this._cdf(points[i]));
-            }
-            return result;
-        } else {
-            // neither value or range
-            throw "Invalid parameter supplied to " + this.getClassName() + ".cumulativeDensity()";
-        }
-    },
-    getRange: function(standardDeviations, numPoints) {
-        if(standardDeviations == null) {
-            standardDeviations = 5;
-        }
-        if(numPoints == null) {
-            numPoints = 100;
-        }
-        var min = this.getMean() - standardDeviations * Math.sqrt(this.getVariance());
-        var max = this.getMean() + standardDeviations * Math.sqrt(this.getVariance());
+})( this.jStat, Math );
 
-        if(this.getClassName() == 'GammaDistribution' || this.getClassName() == 'LogNormalDistribution') {
-            min = 0.0;
-            max = this.getMean() + standardDeviations * Math.sqrt(this.getVariance());
-        } else if(this.getClassName() == 'BetaDistribution') {
-            min = 0.0;
-            max = 1.0;
-        }
+// =========================== test.js =============================
+(function( jStat, Math ) {
 
+var slice = [].slice,
+	isNumber = jStat.utils.isNumber;
 
-        var range = new Range(min, max, numPoints);
-        return range;
-    },
-    getVariance: function(){},
-    getMean: function(){},
-    getQuantile: function(p) {
-        var self = this;
-        /*
-         *  Recursive function to find the closest match
-         */
-        function findClosestMatch(range, p) {
-            var ERR = 1.0e-5;
-            var xs = range.getPoints();
-            var closestIndex = 0;
-            var closestDistance = 999;
+// flag==true denotes use of sample standard deviation
+// Z Statistics
+jStat.extend({
+	// 2 different parameter lists:
+	// ( value, mean, sd )
+	// ( value, array, flag )
+	zscore : function() {
+		var args = slice.call( arguments );
+		if ( isNumber( args[1] )) {
+			return ( args[0] - args[1] ) / args[2];
+		}
+		return ( args[0] - jStat.mean( args[1] )) / jStat.stdev( args[1], args[2] );
+	},
 
-            for(var i=0; i<xs.length; i++) {
-                var pp = self.cumulativeDensity(xs[i]);
-                var distance = Math.abs(pp - p);
-                if(distance < closestDistance) {
-                    // closer value found
-                    closestIndex = i;
-                    closestDistance = distance;
-                }
-            }
-            if(closestDistance <= ERR) {
-                // Acceptable - return value;
-                return xs[closestIndex];
-            } else {
-                // Calculate the new range
-                var newRange = new Range(xs[closestIndex-1], xs[closestIndex+1],20);
-                return findClosestMatch(newRange, p);
-            }
-        }
-        var range = this.getRange(5, 20);
-        return findClosestMatch(range, p);
-    }
+	// 3 different paramter lists:
+	// ( value, mean, sd, sides )
+	// ( zscore, sides )
+	// ( value, array, sides, flag )
+	ztest : function() {
+		var args = slice.call( arguments );
+		if ( args.length === 4 ) {
+			if( isNumber( args[1] )) {
+			var z = jStat.zscore(args[0],args[1],args[2])
+				return ( args[3] === 1 ) ?
+					(jStat.normal.cdf( -Math.abs(z),0,1)) :
+				(jStat.normal.cdf( -Math.abs(z),0,1)* 2);
+			}
+			var z = args[0]
+			return ( args[2] === 1 ) ?
+				( jStat.normal.cdf( -Math.abs(z),0,1)) :
+			(jStat.normal.cdf( -Math.abs(z),0,1)*2);
+		}
+		var z = jStat.zscore(args[0],args[1],args[3])
+		return ( args[1] === 1 ) ?
+			( jStat.normal.cdf( -Math.abs(z), 0, 1 )) :
+		(jStat.normal.cdf( -Math.abs(z), 0, 1 )*2);
+	}
 });
 
-/**
- * A normal distribution object
- */
-var NormalDistribution = ContinuousDistribution.extend({
-    init: function(mean, sigma) {
-        this._super('Normal');
-        this._mean = parseFloat(mean);
-        this._sigma = parseFloat(sigma);
-        this._string = "Normal ("+this._mean.toFixed(2)+", " + this._sigma.toFixed(2) + ")";
-    },
-    _pdf: function(x, give_log) {
-        if(give_log == null) {
-            give_log=false;
-        }  // default is false;
-        var sigma = this._sigma;
-        var mu = this._mean;
-        if(!jstat.isFinite(sigma)) {
-            return (give_log) ? Number.NEGATIVE_INFINITY : 0.0
-        }
-        if(!jstat.isFinite(x) && mu == x) {
-            return Number.NaN;
-        }
-        if(sigma<=0) {
-            if(sigma < 0) {
-                throw "invalid sigma in _pdf";
-            }
-            return (x==mu)?Number.POSITIVE_INFINITY:(give_log)?Number.NEGATIVE_INFINITY:0.0;
-        }
-        x=(x-mu)/sigma;
-        if(!jstat.isFinite(x)){
-            return (give_log)?Number.NEGATIVE_INFINITY:0.0;
-        }
-        return (give_log ? -(jstat.LN_SQRT_2PI + 0.5 * x * x + Math.log(sigma)) :
-            jstat.ONE_SQRT_2PI * Math.exp(-0.5 * x * x) / sigma);
-    },
-    _cdf: function(x, lower_tail, log_p) {
+jStat.extend( jStat.fn, {
+	zscore : function( value, flag ) {
+		return ( value - this.mean()) / this.stdev( flag );
+	},
 
-        if(lower_tail == null) lower_tail = true;
-        if(log_p == null) log_p = false;
-
-        function pnorm_both(x, cum, ccum, i_tail, log_p) {
-            /*  i_tail in {0,1,2} means: "lower", "upper", or "both" :
-                if(lower) return  *cum := P[X <= x]
-                if(upper) return *ccum := P[X >  x] = 1 - P[X <= x]
-             */
-
-            var a = [
-            2.2352520354606839287,
-            161.02823106855587881,
-            1067.6894854603709582,
-            18154.981253343561249,
-            0.065682337918207449113
-            ];
-            var b = [
-            47.20258190468824187,
-            976.09855173777669322,
-            10260.932208618978205,
-            45507.789335026729956
-            ];
-            var c = [
-            0.39894151208813466764,
-            8.8831497943883759412,
-            93.506656132177855979,
-            597.27027639480026226,
-            2494.5375852903726711,
-            6848.1904505362823326,
-            11602.651437647350124,
-            9842.7148383839780218,
-            1.0765576773720192317e-8
-            ];
-            var d = [
-            22.266688044328115691,
-            235.38790178262499861,
-            1519.377599407554805,
-            6485.558298266760755,
-            18615.571640885098091,
-            34900.952721145977266,
-            38912.003286093271411,
-            19685.429676859990727
-            ];
-            var p = [
-            0.21589853405795699,
-            0.1274011611602473639,
-            0.022235277870649807,
-            0.001421619193227893466,
-            2.9112874951168792e-5,
-            0.02307344176494017303
-            ];
-            var q = [
-            1.28426009614491121,
-            0.468238212480865118,
-            0.0659881378689285515,
-            0.00378239633202758244,
-            7.29751555083966205e-5
-            ];
-
-            var xden, xnum, temp, del, eps, xsq, y, i, lower, upper;
-
-            /* Consider changing these : */
-            eps = jstat.DBL_EPSILON * 0.5;
-
-            /* i_tail in {0,1,2} =^= {lower, upper, both} */
-            lower = i_tail != 1;
-            upper = i_tail != 0;
-
-            y = Math.abs(x);
-
-            if (y <= 0.67448975) { /* qnorm(3/4) = .6744.... -- earlier had 0.66291 */
-                if (y > eps) {
-                    xsq = x * x;
-                    xnum = a[4] * xsq;
-                    xden = xsq;
-                    for (i = 0; i < 3; ++i) {
-                        xnum = (xnum + a[i]) * xsq;
-                        xden = (xden + b[i]) * xsq;
-                    }
-                } else {
-                    xnum = xden = 0.0;
-                }
-                temp = x * (xnum + a[3]) / (xden + b[3]);
-                if(lower)  cum = 0.5 + temp;
-                if(upper) ccum = 0.5 - temp;
-                if(log_p) {
-                    if(lower)  cum = Math.log(cum);
-                    if(upper) ccum = Math.log(ccum);
-                }
-
-            } else if (y <= jstat.SQRT_32) {
-                /* Evaluate pnorm for 0.674.. = qnorm(3/4) < |x| <= sqrt(32) ~= 5.657 */
-
-                xnum = c[8] * y;
-                xden = y;
-                for (i = 0; i < 7; ++i) {
-                    xnum = (xnum + c[i]) * y;
-                    xden = (xden + d[i]) * y;
-                }
-                temp = (xnum + c[7]) / (xden + d[7]);
-
-                /* do_del */
-                xsq = jstat.trunc(x * 16) / 16;
-                del = (x - xsq) * (x + xsq);
-                if(log_p) {
-                    cum = (-xsq * xsq * 0.5) + (-del * 0.5) + Math.log(temp);
-                    if((lower && x > 0.) || (upper && x <= 0.))
-                        ccum = jstat.log1p(-Math.exp(-xsq * xsq * 0.5) *
-                            Math.exp(-del * 0.5) * temp);
-                }
-                else {
-                    cum = Math.exp(-xsq * xsq * 0.5) * Math.exp(-del * 0.5) * temp;
-                    ccum = 1.0 - cum;
-                }
-                /* end do_del */
-
-                /* swap_tail */
-                if (x > 0.0) {/* swap  ccum <--> cum */
-                    temp = cum;
-                    if(lower) {
-                        cum = ccum;
-
-                    }
-                    ccum = temp;
-                }
-            /* end swap_tail */
-
-            }
-            /* else	  |x| > sqrt(32) = 5.657 :
-             * the next two case differentiations were really for lower=T, log=F
-             * Particularly	 *not*	for  log_p !
-
-             * Cody had (-37.5193 < x  &&  x < 8.2924) ; R originally had y < 50
-             *
-             * Note that we do want symmetry(0), lower/upper -> hence use y
-             */
-
-            else if((log_p && y < 1e170)|| (lower && -37.5193 < x  &&  x < 8.2924)
-                || (upper && -8.2924  < x  &&  x < 37.5193)) {
-                /* Evaluate pnorm for x in (-37.5, -5.657) union (5.657, 37.5) */
-                xsq = 1.0 / (x * x); /* (1./x)*(1./x) might be better */
-                xnum = p[5] * xsq;
-                xden = xsq;
-                for (i = 0; i < 4; ++i) {
-                    xnum = (xnum + p[i]) * xsq;
-                    xden = (xden + q[i]) * xsq;
-                }
-                temp = xsq * (xnum + p[4]) / (xden + q[4]);
-                temp = (jstat.ONE_SQRT_2PI - temp) / y;
-
-                /* do_del */
-                xsq = jstat.trunc(x * 16) / 16;
-                del = (x - xsq) * (x + xsq);
-                if(log_p) {
-                    cum = (-xsq * xsq * 0.5) + (-del * 0.5) + Math.log(temp);
-                    if((lower && x > 0.) || (upper && x <= 0.))
-                        ccum = jstat.log1p(-Math.exp(-xsq * xsq * 0.5) *
-                            Math.exp(-del * 0.5) * temp);
-                }
-                else {
-                    cum = Math.exp(-xsq * xsq * 0.5) * Math.exp(-del * 0.5) * temp;
-                    ccum = 1.0 - cum;
-                }
-                /* end do_del */
-
-                /* swap_tail */
-                if (x > 0.0) {/* swap  ccum <--> cum */
-                    temp = cum;
-                    if(lower) {
-                        cum = ccum;
-
-                    }
-                    ccum = temp;
-                }
-            /* end swap_tail */
-
-            } else { /* large x such that probs are 0 or 1 */
-                if(x > 0) {
-                    cum = (log_p) ? 0.0 : 1.0;  // R_D__1
-                    ccum = (log_p) ? Number.NEGATIVE_INFINITY : 0.0;  //R_D__0;
-                } else {
-                    cum = (log_p) ? Number.NEGATIVE_INFINITY : 0.0;  //R_D__0;
-                    ccum = (log_p) ? 0.0 : 1.0;  // R_D__1
-                }
-            }
-
-            return [cum, ccum];
-        }
-
-        var p, cp;
-        var mu = this._mean;
-        var sigma = this._sigma;
-        var R_DT_0, R_DT_1;
-
-        if(lower_tail) {
-            if(log_p) {
-                R_DT_0 = Number.NEGATIVE_INFINITY;
-                R_DT_1 = 0.0;
-            } else {
-                R_DT_0 = 0.0;
-                R_DT_1 = 1.0;
-            }
-        } else {
-            if(log_p) {
-                R_DT_0 = 0.0;
-                R_DT_1 = Number.NEGATIVE_INFINITY;
-            } else {
-                R_DT_0 = 1.0;
-                R_DT_1 = 0.0;
-            }
-        }
-
-        if(!jstat.isFinite(x) && mu == x) return Number.NaN;
-        if(sigma <= 0) {
-            if(sigma < 0) {
-                console.warn("Sigma is less than 0");
-                return Number.NaN;
-            }
-            return (x < mu) ? R_DT_0 : R_DT_1;
-        }
-
-        p = (x - mu) / sigma;
-
-        if(!jstat.isFinite(p)) {
-            return (x < mu) ? R_DT_0 : R_DT_1;
-        }
-
-        x = p;
-
-        // pnorm_both(x, &p, &cp, (lower_tail ? 0 : 1), log_p);
-        // result[0] == &p
-        // result[1] == &cp
-
-        var result = pnorm_both(x, p, cp, (lower_tail ? false : true), log_p);
-
-        return (lower_tail ? result[0] : result[1]);
-
-    },
-    getMean: function() {
-        return this._mean;
-    },
-    getSigma: function() {
-        return this._sigma;
-    },
-    getVariance: function() {
-        return this._sigma*this._sigma;
-    }
+	ztest : function( value, sides, flag ) {
+		var zscore = Math.abs( this.zscore( value, flag ));
+		return ( sides === 1 ) ?
+			( jStat.normal.cdf( -zscore, 0, 1 )) :
+		(jStat.normal.cdf( -zscore, 0, 1 ) * 2);
+	}
 });
 
-/**
- *  A Log-normal distribution object
- */
-var LogNormalDistribution = ContinuousDistribution.extend({
-    init: function(location, scale) {
-        this._super('LogNormal')
-        this._location = parseFloat(location);
-        this._scale = parseFloat(scale);
-        this._string = "LogNormal ("+this._location.toFixed(2)+", " + this._scale.toFixed(2) + ")";
-    },
-    _pdf: function(x, give_log) {
-        var y;
-        var sdlog = this._scale;
-        var meanlog = this._location;
-        if(give_log == null) {
-            give_log = false;
-        }
+// T Statistics
+jStat.extend({
+	// 2 parameter lists
+	// ( value, mean, sd, n )
+	// ( value, array )
+	tscore : function() {
+		var args = slice.call( arguments );
+		return ( args.length === 4 ) ?
+			(( args[0] - args[1] ) / ( args[2] / Math.sqrt( args[3] ))) :
+		(( args[0] - jStat.mean( args[1] )) / ( jStat.stdev( args[1], true ) / Math.sqrt( args[1].length )));
+	},
 
-        if(sdlog <= 0) throw "Illegal parameter in _pdf";
-
-        if(x <= 0) {
-            return (give_log) ? Number.NEGATIVE_INFINITY : 0.0;
-        }
-
-        y = (Math.log(x) - meanlog) / sdlog;
-
-        return (give_log ? -(jstat.LN_SQRT_2PI + 0.5 * y * y + Math.log(x * sdlog)) :
-            jstat.ONE_SQRT_2PI * Math.exp(-0.5 * y * y) / (x * sdlog));
-
-    },
-    _cdf: function(x, lower_tail, log_p) {
-        var sdlog = this._scale;
-        var meanlog = this._location;
-        if(lower_tail == null) {
-            lower_tail = true;
-        }
-        if(log_p == null) {
-            log_p = false;
-        }
-
-
-        if(sdlog <= 0) {
-            throw "illegal std in _cdf";
-        }
-
-        if(x > 0) {
-            var nd = new NormalDistribution(meanlog, sdlog);
-            return nd._cdf(Math.log(x), lower_tail, log_p);
-        }
-        if(lower_tail) {
-            return (log_p) ? Number.NEGATIVE_INFINITY : 0.0;    // R_D__0
-        } else {
-            return (log_p) ? 0.0 : 1.0;                         // R_D__1
-        }
-    },
-    getLocation: function() {
-        return this._location;
-    },
-    getScale: function() {
-        return this._scale;
-    },
-    getMean: function() {
-        return Math.exp((this._location + this._scale) /  2);
-    },
-    getVariance: function() {
-        var ans = (Math.exp(this._scale)-1)*Math.exp(2*this._location+this._scale);
-        return ans;
-    }
+	// 3 different paramter lists:
+	// ( value, mean, sd, n, sides )
+	// ( tscore, n, sides )
+	// ( value, array, sides )
+	ttest : function() {
+		var args = slice.call( arguments );
+		var tscore;
+		if ( args.length === 5 ) {
+			tscore = Math.abs( jStat.tscore( args[0], args[1], args[2], args[3] ));
+			return ( args[4] === 1 ) ?
+				(jStat.studentt.cdf( -tscore, args[3]-1 )) :
+			(jStat.studentt.cdf( -tscore, args[3]-1)*2);
+		}
+		if ( isNumber( args[1] )) {
+			tscore = Math.abs( args[0] )
+			return ( args[2] == 1 ) ?
+				( jStat.studentt.cdf( -tscore, args[1]-1)) :
+			(jStat.studentt.cdf( -tscore, args[1]-1) * 2);
+		}
+		tscore = Math.abs( jStat.tscore( args[0], args[1] ))
+		return ( args[2] == 1 ) ?
+			( jStat.studentt.cdf( -tscore, args[1].length-1)) :
+		(jStat.studentt.cdf( -tscore, args[1].length-1) * 2);
+	}
 });
 
+jStat.extend( jStat.fn, {
+	tscore : function( value ) {
+		return ( value - this.mean()) / ( this.stdev( true ) / Math.sqrt( this.cols()));
+	},
 
-/**
- *  Gamma distribution object
- */
-var GammaDistribution = ContinuousDistribution.extend({
-    init: function(shape, scale) {
-        this._super('Gamma');
-        this._shape = parseFloat(shape);
-        this._scale = parseFloat(scale);
-        this._string = "Gamma ("+this._shape.toFixed(2)+", " + this._scale.toFixed(2) + ")";
-    },
-    _pdf: function(x, give_log) {
-        var pr;
-        var shape = this._shape;
-        var scale = this._scale;
-        if(give_log == null) {
-            give_log = false;    // default value
-        }
-
-        if(shape < 0 || scale <= 0) {
-            throw "Illegal argument in _pdf";
-        }
-
-        if(x < 0) {
-            return (give_log) ? Number.NEGATIVE_INFINITY : 0.0; // R_D__0
-        }
-        if(shape == 0) { /* point mass at 0 */
-            return (x == 0) ? Number.POSITIVE_INFINITY : (give_log) ? Number.NEGATIVE_INFINITY : 0.0;   // R_D__0
-        }
-        if(x == 0) {
-            if(shape < 1) return Number.POSITIVE_INFINITY;
-            if(shape > 1) return (give_log) ? Number.NEGATIVE_INFINITY : 0.0; // R_D__0
-            /* else */
-            return (give_log) ? -Math.log(scale) : 1/scale;
-        }
-
-        if(shape < 1) {
-            pr = jstat.dopois_raw(shape, x/scale, give_log);
-            return give_log ? pr + Math.log(shape/x) : pr*shape/x;
-        }
-        /* else shape >= 1 */
-        pr = jstat.dopois_raw(shape-1, x/scale, give_log);
-        return give_log ? pr - Math.log(scale) : pr/scale;
-
-    },
-    /**
-     *	This function computes the distribution function for the
-     *	gamma distribution with shape parameter alph and scale parameter
-     *	scale.	This is also known as the incomplete gamma function.
-     *	See Abramowitz and Stegun (6.5.1) for example.
-     */
-    _cdf: function(x, lower_tail, log_p) {
-        /* define USE_PNORM */
-        function USE_PNORM() {
-            pn1 = Math.sqrt(alph) * 3.0 * (Math.pow(x/alph,1.0/3.0) + 1.0 / (9.0 * alph) - 1.0);
-            var norm_dist = new NormalDistribution(0.0, 1.0);
-            return norm_dist._cdf(pn1, lower_tail, log_p);
-        }
-
-        /* Defaults */
-        if(lower_tail == null) lower_tail = true;
-        if(log_p == null) log_p = false;
-        var alph = this._shape;
-        var scale = this._scale;
-        var xbig = 1.0e+8;
-        var xlarge = 1.0e+37;
-        var alphlimit = 1e5;
-        var pn1,pn2,pn3,pn4,pn5,pn6,arg,a,b,c,an,osum,sum,n,pearson;
-
-        if(alph <= 0. || scale <= 0.) {
-            console.warn('Invalid gamma params in _cdf');
-            return Number.NaN;
-        }
-
-        x/=scale;
-        if(isNaN(x)) return x;
-        if(x <= 0.0) {
-            // R_DT_0
-            if(lower_tail) {
-                // R_D__0
-                return (log_p) ? Number.NEGATIVE_INFINITY : 0.0;
-            } else {
-                // R_D__1
-                return (log_p) ? 0.0 : 1.0;
-            }
-        }
-
-        if(alph > alphlimit) {
-            return USE_PNORM();
-        }
-
-        if(x > xbig * alph) {
-            if(x > jstat.DBL_MAX * alph) {
-                // R_DT_1
-                if(lower_tail) {
-                    // R_D__1
-                    return (log_p) ? 0.0 : 1.0;
-                } else {
-                    // R_D__0
-                    return (log_p) ? Number.NEGATIVE_INFINITY : 0.0;
-                }
-            } else {
-                return USE_PNORM();
-            }
-        }
-
-        if(x <= 1.0 || x < alph) {
-            pearson = 1; /* use pearson's series expansion */
-            arg = alph * Math.log(x) - x - jstat.lgamma(alph + 1.0);
-
-            c = 1.0;
-            sum = 1.0;
-            a = alph;
-            do {
-                a += 1.0;
-                c *= x / a;
-                sum += c;
-            } while(c > jstat.DBL_EPSILON * sum);
-        } else { /* x >= max( 1, alph) */
-            pearson = 0;/* use a continued fraction expansion */
-            arg = alph * Math.log(x) - x - jstat.lgamma(alph);
-
-            a = 1. - alph;
-            b = a + x + 1.;
-            pn1 = 1.;
-            pn2 = x;
-            pn3 = x + 1.;
-            pn4 = x * b;
-            sum = pn3 / pn4;
-
-            for (n = 1; ; n++) {
-                a += 1.;/* =   n+1 -alph */
-                b += 2.;/* = 2(n+1)-alph+x */
-                an = a * n;
-                pn5 = b * pn3 - an * pn1;
-                pn6 = b * pn4 - an * pn2;
-                if (Math.abs(pn6) > 0.) {
-                    osum = sum;
-                    sum = pn5 / pn6;
-                    if (Math.abs(osum - sum) <= jstat.DBL_EPSILON * jstat.fmin2(1.0, sum))
-                        break;
-                }
-                pn1 = pn3;
-                pn2 = pn4;
-                pn3 = pn5;
-                pn4 = pn6;
-
-                if (Math.abs(pn5) >= xlarge) {
-                    pn1 /= xlarge;
-                    pn2 /= xlarge;
-                    pn3 /= xlarge;
-                    pn4 /= xlarge;
-                }
-            }
-        }
-        arg += Math.log(sum);
-        lower_tail = (lower_tail == pearson);
-
-        if (log_p && lower_tail)
-            return(arg);
-        /* else */
-        /* sum = exp(arg); and return   if(lower_tail) sum	else 1-sum : */
-
-        if(lower_tail) {
-            return Math.exp(arg);
-        } else {
-            if(log_p) {
-                // R_Log1_Exp(arg);
-                return (arg > -Math.LN2)  ? Math.log(-jstat.expm1(arg)) : jstat.log1p(-Math.exp(arg));
-            } else {
-                return -jstat.expm1(arg);
-            }
-        }
-    },
-    getShape: function() {
-        return this._shape;
-    },
-    getScale: function() {
-        return this._scale;
-    },
-    getMean: function() {
-        return this._shape * this._scale;
-    },
-    getVariance: function() {
-        return this._shape*Math.pow(this._scale,2);
-    }
+	ttest : function( value, sides ) {
+		return ( sides === 1 ) ?
+			( 1 - jStat.studentt.cdf( Math.abs( this.tscore(value)), this.cols()-1)) :
+		(jStat.studentt.cdf( -Math.abs( this.tscore(value)), this.cols()-1)*2);
+	}
 });
 
-/**
- *  A Beta distribution object
- */
-var BetaDistribution = ContinuousDistribution.extend({
-    init: function(alpha, beta) {
-        this._super('Beta');
-        this._alpha = parseFloat(alpha);
-        this._beta = parseFloat(beta);
-        this._string = "Beta ("+this._alpha.toFixed(2)+", " + this._beta.toFixed(2) + ")";
-    },
-    _pdf: function(x, give_log) {
-        if(give_log == null) give_log = false; // default;
-        var a = this._alpha;
-        var b = this._beta;
-        var lval;
-        if(a <= 0 || b <= 0) {
-            console.warn('Illegal arguments in _pdf');
-            return Number.NaN;
-        }
-        if(x < 0 || x > 1) {
-            // R_D__0
-            return (give_log) ? Number.NEGATIVE_INFINITY : 0.0;
-        }
-        if(x == 0) {
-            if(a > 1) {
-                // R_D__0
-                return (give_log) ? Number.NEGATIVE_INFINITY : 0.0;
-            }
-            if(a < 1) {
-                return Number.POSITIVE_INFINITY;
-            }
-            /*a == 1 */ return (give_log) ? Math.log(b) : b;    // R_D_val(b)
-        }
-        if(x == 1) {
-            if(b > 1) {
-                // R_D__0
-                return (give_log) ? Number.NEGATIVE_INFINITY : 0.0;
-            }
-            if(b < 1) {
-                return Number.POSITIVE_INFINITY;
-            }
-            /* b == 1 */ return (give_log) ? Math.log(a) : a;   // R_D_val(a)
-        }
-        if(a<=2||b<=2) {
-            lval = (a-1)*Math.log(x) + (b-1)*jstat.log1p(-x) - jstat.logBeta(a, b);
-        } else {
-            lval = Math.log(a+b-1) + jstat.dbinom_raw(a-1, a+b-2, x, 1-x, true);
-        }
-        //R_D_exp(lval)
-        return (give_log) ? lval : Math.exp(lval);
-    },
-    _cdf: function(x, lower_tail, log_p) {
-        if(lower_tail == null) lower_tail = true;
-        if(log_p == null) log_p = false;
+// F Statistics
+jStat.extend({
+	// Paramter list is as follows:
+	// ( array1, array2, array3, ... )
+	// or it is an array of arrays
+	// array of arrays conversion
+	anovafscore : function() {
+		var args = slice.call( arguments ),
+			expVar, sample, sampMean, sampSampMean, tmpargs, unexpVar, i, j;
+		if ( args.length === 1 ) {
+			tmpargs = new Array( args[0].length );
+			for ( i = 0; i < args[0].length; i++ ) {
+				tmpargs[i] = args[0][i];
+			}
+			args = tmpargs;
+		}
+		// 2 sample case
+		if ( args.length === 2 ) {
+			return jStat.variance( args[0] ) / jStat.variance( args[1] );
+		}
+		// Builds sample array
+		sample = new Array();
+		for ( i = 0; i < args.length; i++ ) {
+			sample = sample.concat( args[i] );
+		}	
+		sampMean = jStat.mean( sample );
+		// Computes the explained variance
+		expVar = 0;
+		for ( i = 0; i < args.length; i++ ) {
+			expVar = expVar + args[i].length * Math.pow( jStat.mean( args[i] ) - sampMean, 2 );
+		}
+		expVar /= ( args.length - 1 );
+		// Computes unexplained variance
+		unexpVar = 0;
+		for ( i = 0; i < args.length; i++ ) {
+			sampSampMean = jStat.mean( args[i] );
+			for ( j = 0; j < args[i].length; j++ ) {
+				unexpVar += Math.pow( args[i][j] - sampSampMean, 2 );
+			}
+		}
+		unexpVar /= ( sample.length - args.length );
+		return expVar / unexpVar;
+	},
 
-        var pin = this._alpha;
-        var qin = this._beta;
+	// 2 different paramter setups
+	// ( array1, array2, array3, ... )
+	// ( anovafscore, df1, df2 )
+	anovaftest : function() {
+		var args = slice.call( arguments ),
+			df1, df2, n, i;
+		if ( isNumber( args[0] )) {
+			return 1 - jStat.centralF.cdf( args[0], args[1], args[2] );
+		}
+		anovafscore = jStat.anovafscore( args );
+		df1 = args.length - 1;
+		n = 0;
+		for ( i = 0; i < args.length; i++ ) {
+			n = n + args[i].length;
+		}
+		df2 = n - df1 - 1;
+		return 1 - jStat.centralF.cdf( anovafscore, df1, df2 );
+	},
 
-        if(pin <= 0 || qin <= 0) {
-            console.warn('Invalid argument in _cdf');
-            return Number.NaN;
-        }
-
-        if(x <= 0) {
-            //R_DT_0;
-            if(lower_tail) {
-                // R_D__0
-                return (log_p) ? Number.NEGATIVE_INFINITY : 0.0;
-            } else {
-                // R_D__1
-                return (log_p) ? 0.1 : 1.0;
-            }
-        }
-
-        if(x >= 1){
-            // R_DT_1
-            if(lower_tail) {
-                // R_D__1
-                return (log_p) ? 0.1 : 1.0;
-            } else {
-                // R_D__0
-                return (log_p) ? Number.NEGATIVE_INFINITY : 0.0;
-            }
-        }
-
-        /* else */
-        return jstat.incompleteBeta(pin, qin, x);
-    },
-    getAlpha: function() {
-        return this._alpha;
-    },
-    getBeta: function() {
-        return this._beta;
-    },
-    getMean: function() {
-        return this._alpha / (this._alpha+ this._beta);
-    },
-    getVariance: function() {
-        var ans = (this._alpha * this._beta) / (Math.pow(this._alpha+this._beta,2)*(this._alpha+this._beta+1));
-        return ans;
-    }
+	ftest : function( fscore, df1, df2 ) {
+		return 1 - jStat.centralF.cdf( fscore, df1, df2 );
+	}
 });
 
-var StudentTDistribution = ContinuousDistribution.extend({
-    init: function(degreesOfFreedom, mu) {
-        this._super('StudentT');
-        this._dof = parseFloat(degreesOfFreedom);
+jStat.extend( jStat.fn, {
+	anovafscore : function() {
+		return jStat.anovafscore( this.toArray());
+	},
 
-        if(mu != null) {
-            this._mu = parseFloat(mu);
-            this._string = "StudentT ("+this._dof.toFixed(2)+", " + this._mu.toFixed(2)+ ")";
-        } else {
-            this._mu = 0.0;
-            this._string = "StudentT ("+this._dof.toFixed(2)+")";
-        }
-
-    },
-    _pdf: function(x, give_log) {
-        if(give_log == null) give_log = false;
-        if(this._mu == null) {
-            return this._dt(x, give_log);
-        } else {
-            var y = this._dnt(x, give_log);
-            if(y > 1){
-                console.warn('x:' + x + ', y: ' + y);
-            }
-            return y;
-        }
-    },
-    _cdf: function(x, lower_tail, give_log) {
-        if(lower_tail == null) lower_tail = true;
-        if(give_log == null) give_log = false;
-        if(this._mu == null) {
-            return this._pt(x, lower_tail, give_log);
-        } else {
-            return this._pnt(x, lower_tail, give_log);
-        }
-    },
-    _dt: function(x, give_log) {
-        var t,u;
-        var n = this._dof;
-        if (n <= 0){
-            console.warn('Invalid parameters in _dt');
-            return Number.NaN;
-        }
-        if(!jstat.isFinite(x)) {
-            return (give_log) ? Number.NEGATIVE_INFINITY : 0.0; // R_D__0;
-        }
-
-        if(!jstat.isFinite(n)) {
-            var norm = new NormalDistribution(0.0, 1.0);
-            return norm.density(x, give_log);
-        }
-
-
-        t = -jstat.bd0(n/2.0,(n+1)/2.0) + jstat.stirlerr((n+1)/2.0) - jstat.stirlerr(n/2.0);
-        if ( x*x > 0.2*n )
-            u = Math.log( 1+ x*x/n ) * n/2;
-        else
-            u = -jstat.bd0(n/2.0,(n+x*x)/2.0) + x*x/2.0;
-
-        var p1 = jstat.TWO_PI *(1+x*x/n);
-        var p2 = t-u;
-
-        return (give_log) ? -0.5*Math.log(p1) + p2 : Math.exp(p2)/Math.sqrt(p1);       // R_D_fexp(M_2PI*(1+x*x/n), t-u);
-    },
-    _dnt: function(x, give_log) {
-        if(give_log == null) give_log = false;
-        var df = this._dof;
-        var ncp = this._mu;
-        var u;
-
-        if(df <= 0.0) {
-            console.warn("Illegal arguments _dnf");
-            return Number.NaN;
-        }
-        if(ncp == 0.0) {
-            return this._dt(x, give_log);
-        }
-
-        if(!jstat.isFinite(x)) {
-            // R_D__0
-            if(give_log) {
-                return Number.NEGATIVE_INFINITY;
-            } else {
-                return 0.0;
-            }
-        }
-
-        /* If infinite df then the density is identical to a
-           normal distribution with mean = ncp.  However, the formula
-           loses a lot of accuracy around df=1e9
-         */
-        if(!isFinite(df) || df > 1e8) {
-            var dist = new NormalDistribution(ncp, 1.);
-            return dist.density(x, give_log);
-        }
-
-        /* Do calculations on log scale to stabilize */
-
-        /* Consider two cases: x ~= 0 or not */
-        if (Math.abs(x) > Math.sqrt(df * jstat.DBL_EPSILON)) {
-            var newT = new StudentTDistribution(df+2, ncp);
-            u = Math.log(df) - Math.log(Math.abs(x)) +
-            Math.log(Math.abs(newT._pnt(x*Math.sqrt((df+2)/df), true, false) -
-                this._pnt(x, true, false)));
-        /* FIXME: the above still suffers from cancellation (but not horribly) */
-        }
-        else {  /* x ~= 0 : -> same value as for  x = 0 */
-            u = jstat.lgamma((df+1)/2) - jstat.lgamma(df/2)
-            - .5*(Math.log(Math.PI) + Math.log(df) + ncp*ncp);
-        }
-
-        return (give_log ? u : Math.exp(u));
-    },
-    _pt: function(x, lower_tail, log_p) {
-        if(lower_tail == null) lower_tail = true;
-        if(log_p == null) log_p = false;
-        var val, nx;
-        var n = this._dof;
-        var DT_0, DT_1;
-
-        if(lower_tail) {
-            if(log_p) {
-                DT_0 = Number.NEGATIVE_INFINITY;
-                DT_1 = 1.;
-            } else {
-                DT_0 = 0.;
-                DT_1 = 1.;
-            }
-        } else {
-            if(log_p) {
-                // not lower_tail but log_p
-                DT_0 = 0.;
-                DT_1 = Number.NEGATIVE_INFINITY;
-            } else {
-                // not lower_tail and not log_p
-                DT_0 = 1.;
-                DT_1 = 0.;
-            }
-        }
-
-        if(n <= 0.0) {
-            console.warn("Invalid T distribution _pt");
-            return Number.NaN;
-        }
-        var norm = new NormalDistribution(0,1);
-        if(!jstat.isFinite(x)) {
-            return (x < 0) ? DT_0 : DT_1;
-        }
-        if(!jstat.isFinite(n)) {
-            return norm._cdf(x, lower_tail, log_p);
-        }
-
-        if (n > 4e5) { /*-- Fixme(?): test should depend on `n' AND `x' ! */
-            /* Approx. from	 Abramowitz & Stegun 26.7.8 (p.949) */
-            val = 1./(4.*n);
-            return norm._cdf(x*(1. - val)/sqrt(1. + x*x*2.*val), lower_tail, log_p);
-        }
-
-        nx = 1 + (x/n)*x;
-        /* FIXME: This test is probably losing rather than gaining precision,
-         * now that pbeta(*, log_p = TRUE) is much better.
-         * Note however that a version of this test *is* needed for x*x > D_MAX */
-        if(nx > 1e100) { /* <==>  x*x > 1e100 * n  */
-            /* Danger of underflow. So use Abramowitz & Stegun 26.5.4
-	   pbeta(z, a, b) ~ z^a(1-z)^b / aB(a,b) ~ z^a / aB(a,b),
-	   with z = 1/nx,  a = n/2,  b= 1/2 :
-             */
-            var lval;
-            lval = -0.5*n*(2*Math.log(Math.abs(x)) - Math.log(n))
-            - jstat.logBeta(0.5*n, 0.5) - Math.log(0.5*n);
-            val = log_p ? lval : Math.exp(lval);
-        } else {
-            /*
-            val = (n > x * x)
-            //    ? pbeta (x * x / (n + x * x), 0.5, n / 2., 0, log_p)
-           // : pbeta (1. / nx,             n / 2., 0.5, 1, log_p);
-             */
-            if(n > x * x) {
-                var beta = new BetaDistribution(0.5, n/2.);
-                return beta._cdf(x*x/ (n + x * x), false, log_p);
-            } else {
-                beta = new BetaDistribution(n / 2., 0.5);
-                return beta._cdf(1. / nx, true, log_p);
-            }
-
-
-        }
-
-        /* Use "1 - v"  if	lower_tail  and	 x > 0 (but not both):*/
-        if(x <= 0.)
-            lower_tail = !lower_tail;
-
-        if(log_p) {
-            if(lower_tail) return jstat.log1p(-0.5*Math.exp(val));
-            else return val - M_LN2; /* = log(.5* pbeta(....)) */
-        }
-        else {
-            val /= 2.;
-            if(lower_tail) {
-                return (0.5 - val + 0.5);
-            } else {
-                return val;
-            }
-        }
-    },
-    _pnt: function(t, lower_tail, log_p) {
-
-        var dof = this._dof;
-        var ncp = this._mu;
-        var DT_0, DT_1;
-
-        if(lower_tail) {
-            if(log_p) {
-                DT_0 = Number.NEGATIVE_INFINITY;
-                DT_1 = 1.;
-            } else {
-                DT_0 = 0.;
-                DT_1 = 1.;
-            }
-        } else {
-            if(log_p) {
-                // not lower_tail but log_p
-                DT_0 = 0.;
-                DT_1 = Number.NEGATIVE_INFINITY;
-            } else {
-                // not lower_tail and not log_p
-                DT_0 = 1.;
-                DT_1 = 0.;
-            }
-        }
-
-        var albeta, a, b, del, errbd, lambda, rxb, tt, x;
-        var geven, godd, p, q, s, tnc, xeven, xodd;
-        var it, negdel;
-
-        /* note - itrmax and errmax may be changed to suit one's needs. */
-        var ITRMAX = 1000;
-        var ERRMAX = 1.e-7;
-
-        if(dof <= 0.0) {
-            return Number.NaN;
-        } else if (dof == 0.0) {
-            return this._pt(t);
-        }
-
-        if(!jstat.isFinite(t)) {
-            return (t < 0) ? DT_0 : DT_1;
-        }
-        if(t >= 0.) {
-            negdel = false;
-            tt = t;
-            del = ncp;
-        } else {
-            /* We deal quickly with left tail if extreme,
-	   since pt(q, df, ncp) <= pt(0, df, ncp) = \Phi(-ncp) */
-            if(ncp >= 40 && (!log_p || !lower_tail)) {
-                return DT_0;
-            }
-            negdel = true;
-            tt = -t;
-            del = -ncp;
-        }
-
-        if(dof > 4e5 || del*del > 2* Math.LN2 * (-(jstat.DBL_MIN_EXP))) {
-            /*-- 2nd part: if del > 37.62, then p=0 below
-	    FIXME: test should depend on `df', `tt' AND `del' ! */
-            /* Approx. from	 Abramowitz & Stegun 26.7.10 (p.949) */
-            s=1./(4.*dof);
-            var norm = new NormalDistribution(del, Math.sqrt(1. + tt*tt*2.*s));
-            var result = norm._cdf(tt*(1.-s), lower_tail != negdel, log_p);
-            return result;
-        }
-
-        /* initialize twin series */
-        /* Guenther, J. (1978). Statist. Computn. Simuln. vol.6, 199. */
-        x = t * t;
-        rxb = dof/(x + dof);/* := (1 - x) {x below} -- but more accurately */
-        x = x / (x + dof);/* in [0,1) */
-        if (x > 0.) {/* <==>  t != 0 */
-            lambda = del * del;
-            p = .5 * Math.exp(-.5 * lambda);
-            if(p == 0.) {   // underflow!
-                console.warn("underflow in _pnt");
-                return DT_0;
-            }
-            q = jstat.SQRT_2dPI * p * del;
-            s = .5 - p;
-            if(s < 1e-7) {
-                s = -0.5 * jstat.expm1(-0.5 * lambda);
-            }
-            a = .5;
-            b = .5 * dof;
-            /* rxb = (1 - x) ^ b   [ ~= 1 - b*x for tiny x --> see 'xeven' below]
-             * where '(1 - x)' =: rxb {accurately!} above */
-            rxb = Math.pow(rxb, b);
-            albeta = jstat.LN_SQRT_PI + jstat.lgamma(b) - jstat.lgamma(.5 + b);
-            /* TODO: change incompleteBeta function to accept lower_tail and p_log */
-            xodd = jstat.incompleteBeta(a, b, x);
-            godd = 2. * rxb * Math.exp(a * Math.log(x) - albeta);
-            tnc = b * x;
-            xeven = (tnc < jstat.DBL_EPSILON) ? tnc : 1. - rxb;
-            geven = tnc * rxb;
-            tnc = p * xodd + q * xeven;
-
-            /* repeat until convergence or iteration limit */
-            for(it = 1; it <= ITRMAX; it++) {
-                a += 1.;
-                xodd  -= godd;
-                xeven -= geven;
-                godd  *= x * (a + b - 1.) / a;
-                geven *= x * (a + b - .5) / (a + .5);
-                p *= lambda / (2 * it);
-                q *= lambda / (2 * it + 1);
-                tnc += p * xodd + q * xeven;
-                s -= p;
-                /* R 2.4.0 added test for rounding error here. */
-                if(s < -1.e-10) { /* happens e.g. for (t,df,ncp)=(40,10,38.5), after 799 it.*/
-                    //console.write("precision error _pnt");
-                    break;
-                }
-                if(s <= 0 && it > 1) break;
-
-                errbd = 2. * s * (xodd - godd);
-
-                if(Math.abs(errbd) < ERRMAX) break;/*convergence*/
-            }
-
-            if(it == ITRMAX) {
-                throw "Non-convergence _pnt";
-            }
-        } else {
-            tnc = 0.;
-        }
-        norm = new NormalDistribution(0,1);
-        tnc += norm._cdf(-del, /*lower*/true, /*log_p*/ false);
-
-        lower_tail = lower_tail != negdel; /* xor */
-        if(tnc > 1 - 1e-10 && lower_tail) {
-            //console.warn("precision error _pnt");
-        }
-        var res = jstat.fmin2(tnc, 1.);
-        if(lower_tail) {
-            if(log_p) {
-                return Math.log(res);
-            } else {
-                return res;
-            }
-        } else {
-            if(log_p) {
-                return jstat.log1p(-(res));
-            } else {
-                return (0.5 - (res) + 0.5);
-            }
-        }
-    },
-    getDegreesOfFreedom: function() {
-        return this._dof;
-    },
-    getNonCentralityParameter: function() {
-        return this._mu;
-    },
-    getMean: function() {
-        if(this._dof > 1) {
-            var ans = (1/2)*Math.log(this._dof/2) + jstat.lgamma((this._dof-1)/2) - jstat.lgamma(this._dof/2)
-            return Math.exp(ans) * this._mu;
-        } else {
-            return Number.NaN;
-        }
-    },
-    getVariance: function() {
-        if(this._dof > 2) {
-            var ans = this._dof * (1 + this._mu*this._mu)/(this._dof-2) - (((this._mu*this._mu * this._dof) / 2) * Math.pow(Math.exp(jstat.lgamma((this._dof - 1)/2)-jstat.lgamma(this._dof/2)), 2));
-            return ans;
-        } else {
-            return Number.NaN;
-        }
-    }
+	anovaftest: function() {
+		var n = 0,
+			i;
+		for ( i = 0; i < this.length; i++ ) {
+			n = n + this[i].length;
+		}
+		return jStat.ftest( this.anovafscore(), this.length - 1, n - this.length );
+	}
 });
 
+// Error Bounds
+jStat.extend({
+	// 2 different parameter setups
+	// ( value, alpha, sd, n )
+	// ( value, alpha, array )
+	normalci : function() {
+		var args = slice.call( arguments ),
+			ans = new Array(2),
+			change;
+		if ( args.length === 4 ) {
+			change = Math.abs( jStat.normal.inv( args[1] / 2, 0, 1 ) * args[2] / Math.sqrt( args[3] ));
+		} else {
+			change = Math.abs( jStat.normal.inv( args[1] / 2, 0, 1 ) * jStat.stdev( args[2] ) / Math.sqrt( args[2].length ));
+		}
+		ans[0] = args[0] - change;
+		ans[1] = args[0] + change;
+		return ans;
+	},
 
-/******************************************************************************/
-/*                      jQuery Flot graph objects                             */
-/******************************************************************************/
+	// 2 different parameter setups
+	// ( value, alpha, sd, n )
+	// ( value, alpha, array )
+	tci : function() {
+		var args = slice.call( arguments ),
+			ans = new Array(2),
+			change;
+		if ( args.length === 4 ) {
+			change = Math.abs( jStat.studentt.inv( args[1] / 2, args[3] - 1 ) * args[2] / Math.sqrt( args[3] ));
+		} else {
+			change = Math.abs( jStat.studentt.inv( args[1] / 2, args[2].length ) * jStat.stdev( args[2], true ) / Math.sqrt( args[2].length ));
+		}
+		ans[0] = args[0] - change;
+		ans[1] = args[0] + change;
+		return ans;
+	},
 
-var Plot = Class.extend({
-    init: function(id, options) {
-        this._container = '#' + String(id);
-        this._plots = [];
-        this._flotObj = null;
-        this._locked = false;
-
-        if(options != null) {
-            this._options = options;
-        } else {
-            this._options = {
-            };
-        }
-
-    },
-    getContainer: function() {
-        return this._container;
-    },
-    getGraph: function() {
-        return this._flotObj;
-    },
-    setData: function(data) {
-        this._plots = data;
-    },
-    clear: function() {
-        this._plots = [];
-    //this.render();
-    },
-    showLegend: function() {
-        this._options.legend = {
-            show: true
-        }
-        this.render();
-    },
-    hideLegend: function() {
-        this._options.legend = {
-            show: false
-        }
-        this.render();
-    },
-    render: function() {
-        this._flotObj = null;
-        this._flotObj = $.plot($(this._container), this._plots, this._options);
-    }
+	significant : function( pvalue, alpha ) {
+		return pvalue < alpha;
+	}
 });
 
-var DistributionPlot = Plot.extend({
-    init: function(id, distribution, range, options) {
-        this._super(id, options);
-        this._showPDF = true;
-        this._showCDF = false;
-        this._pdfValues = [];     // raw values for pdf
-        this._cdfValues = [];     // raw values for cdf
-        this._maxY = 1;
-        this._plotType = 'line';    // line, point, both
-        this._fill = false;
-        this._distribution = distribution;    // underlying PDF
-        // Range object for the plot
-        if(range != null && Range.validate(range)) {
-            this._range = range;
-        } else {
-            this._range = this._distribution.getRange(); // no range supplied, use distribution default
-        }
+jStat.extend( jStat.fn, {
+	normalci : function( value, alpha ) {
+		return jStat.normalci( value, alpha, this.toArray());
+	},
 
-        // render
-        if(this._distribution != null) {
-            this._maxY = this._generateValues();   // create the pdf/cdf values in the ctor
-        } else {
-            this._options.xaxis = {
-                min: range.getMinimum(),
-                max: range.getMaximum()
-            }
-            this._options.yaxis = {
-                max: 1
-            }
-        }
-
-
-
-        this.render();
-    },
-    setHover: function(bool) {
-        if(bool) {
-            if(this._options.grid == null) {
-                this._options.grid = {
-                    hoverable: true,
-                    mouseActiveRadius: 25
-                }
-            } else {
-                this._options.grid.hoverable = true,
-                this._options.grid.mouseActiveRadius = 25
-            }
-            function showTooltip(x, y, contents, color) {
-                $('<div id="jstat_tooltip">' + contents + '</div>').css( {
-                    position: 'absolute',
-                    display: 'none',
-                    top: y + 15,
-                    'font-size': 'small',
-                    left: x + 5,
-                    border: '1px solid ' + color[1],
-                    color: color[2],
-                    padding: '5px',
-                    'background-color': color[0],
-                    opacity: 0.80
-                }).appendTo("body").show();
-            }
-            var previousPoint = null;
-            $(this._container).bind("plothover", function(event, pos, item) {
-                $("#x").text(pos.x.toFixed(2));
-                $("#y").text(pos.y.toFixed(2));
-                if (item) {
-                    if (previousPoint != item.datapoint) {
-                        previousPoint = item.datapoint;
-                        $("#jstat_tooltip").remove();
-                        var x = jstat.toSigFig(item.datapoint[0],2), y = jstat.toSigFig(item.datapoint[1], 2);
-                        var text = null;
-                        var color = item.series.color;
-                        if(item.series.label == 'PDF') {
-                            text = "P(" + x + ") = " + y;
-                            color = ["#fee", "#fdd", "#C05F5F"];
-                        } else {
-                            // cdf
-                            text = "F(" + x + ") = " + y;
-                            color = ["#eef", "#ddf", "#4A4AC0"];
-                        }
-                        showTooltip(item.pageX, item.pageY, text, color);
-                    }
-                }
-                else {
-                    $("#jstat_tooltip").remove();
-                    previousPoint = null;
-                }
-            });
-            $(this._container).bind("mouseleave", function() {
-                if($('#jstat_tooltip').is(':visible')) {
-                    $('#jstat_tooltip').remove();
-                    previousPoint = null;
-                }
-            });
-        } else {
-            // unbind
-            if(this._options.grid == null) {
-                this._options.grid = {
-                    hoverable: false
-                }
-            } else {
-                this._options.grid.hoverable = false
-            }
-            $(this._container).unbind("plothover");
-        }
-
-        this.render();
-    },
-    setType: function(type) {
-        this._plotType = type;
-        var lines = {};
-        var points = {};
-        if(this._plotType == 'line') {
-            lines.show = true;
-            points.show = false;
-        } else if(this._plotType == 'points') {
-            lines.show = false;
-            points.show = true;
-        } else if(this._plotType == 'both') {
-            lines.show = true;
-            points.show = true;
-        }
-        if(this._options.series == null) {
-            this._options.series = {
-                lines: lines,
-                points: points
-            }
-        } else {
-            if(this._options.series.lines == null) {
-                this._options.series.lines = lines;
-            } else {
-                this._options.series.lines.show = lines.show;
-            }
-            if(this._options.series.points == null) {
-                this._options.series.points = points;
-            } else {
-                this._options.series.points.show = points.show;
-            }
-        }
-
-        this.render();
-    },
-    setFill: function(bool) {
-        this._fill = bool;
-        if(this._options.series == null) {
-            this._options.series = {
-                lines: {
-                    fill: bool
-                }
-            }
-        } else {
-            if(this._options.series.lines == null) {
-                this._options.series.lines = {
-                    fill: bool
-                }
-            } else {
-                this._options.series.lines.fill = bool;
-            }
-        }
-        this.render();
-    },
-    clear: function() {
-        this._super();
-        this._distribution = null;
-        this._pdfValues = [];
-        this._cdfValues = [];
-        this.render();
-    },
-    _generateValues: function() {
-        this._cdfValues = [];     // reinitialize the arrays.
-        this._pdfValues = [];
-
-        var xs = this._range.getPoints();
-
-        this._options.xaxis = {
-            min: xs[0],
-            max: xs[xs.length-1]
-        }
-        var pdfs = this._distribution.density(this._range);
-        var cdfs = this._distribution.cumulativeDensity(this._range);
-        for(var i = 0; i < xs.length; i++) {
-            if(pdfs[i] == Number.POSITIVE_INFINITY || pdfs[i] == Number.NEGATIVE_INFINITY) {
-                pdfs[i] = null;
-            }
-            if(cdfs[i] == Number.POSITIVE_INFINITY || cdfs[i] == Number.NEGATIVE_INFINITY) {
-                cdfs[i] = null;
-            }
-            this._pdfValues.push([xs[i], pdfs[i]]);
-            this._cdfValues.push([xs[i], cdfs[i]]);
-        }
-        return jstat.max(pdfs);
-    },
-    showPDF: function() {
-        this._showPDF = true;
-        this.render();
-    },
-    hidePDF: function() {
-        this._showPDF = false;
-        this.render();
-    },
-    showCDF: function() {
-        this._showCDF = true;
-        this.render();
-    },
-    hideCDF: function() {
-        this._showCDF = false;
-        this.render();
-    },
-    setDistribution: function(distribution, range) {
-        this._distribution = distribution;
-        if(range != null) {
-            this._range = range;
-        } else {
-            this._range = distribution.getRange();
-        }
-        this._maxY = this._generateValues();
-        this._options.yaxis = {
-            max: this._maxY*1.1
-        }
-
-        this.render();
-    },
-    getDistribution: function() {
-        return this._distribution;
-    },
-    getRange: function() {
-        return this._range;
-    },
-    setRange: function(range) {
-        this._range = range;
-        this._generateValues();
-        this.render();
-    },
-    render: function() {
-        if(this._distribution != null) {
-            if(this._showPDF && this._showCDF) {
-                this.setData([{
-                    yaxis: 1,
-                    data:this._pdfValues,
-                    color: 'rgb(237,194,64)',
-                    clickable: false,
-                    hoverable: true,
-                    label: "PDF"
-                }, {
-                    yaxis: 2,
-                    data:this._cdfValues,
-                    clickable: false,
-                    color: 'rgb(175,216,248)',
-                    hoverable: true,
-                    label: "CDF"
-                }]);
-                this._options.yaxis = {
-                    max: this._maxY*1.1
-                }
-            } else if(this._showPDF) {
-                this.setData([{
-                    data:this._pdfValues,
-                    hoverable: true,
-                    color: 'rgb(237,194,64)',
-                    clickable: false,
-                    label: "PDF"
-                }]);
-                this._options.yaxis = {
-                    max: this._maxY*1.1
-                }
-            } else if(this._showCDF) {
-                this.setData([{
-                    data:this._cdfValues,
-                    hoverable: true,
-                    color: 'rgb(175,216,248)',
-                    clickable: false,
-                    label: "CDF"
-                }]);
-                this._options.yaxis = {
-                    max: 1.1
-                }
-            }
-        } else {
-            this.setData([]);
-        }
-        this._super();  // Call the parent plot method
-    }
+	tci : function( value, alpha ) {
+		return jStat.tci( value, alpha, this.toArray());
+	}
 });
 
-var DistributionFactory = {};
-DistributionFactory.build = function(json) {
-    /*
-    if(json.name == null) {
-        try{
-            json = JSON.parse(json);
-        }
-        catch(err) {
-            throw "invalid JSON";
-        }
+}( this.jStat, Math ));
 
-    // try to parse it
-    }*/
+// =========================== linearalgebra.js =============================
+/* Provides functions for the solution of linear system of equations, integration, extrapolation,
+ * interpolation, eigenvalue problems, differential equations and PCA analysis. */
 
-    /*
-    if(json.name != null) {
-        var name = json.name;
-    } else {
-        throw "Malformed JSON provided to DistributionBuilder " + json;
-    }
-     */
-    if(json.NormalDistribution) {
-        if(json.NormalDistribution.mean != null && json.NormalDistribution.standardDeviation != null) {
-            return new NormalDistribution(json.NormalDistribution.mean[0], json.NormalDistribution.standardDeviation[0]);
-        } else {
-            throw "Malformed JSON provided to DistributionBuilder " + json;
-        }
-    } else if (json.LogNormalDistribution) {
-        if(json.LogNormalDistribution.location != null && json.LogNormalDistribution.scale != null) {
-            return new LogNormalDistribution(json.LogNormalDistribution.location[0], json.LogNormalDistribution.scale[0]);
-        } else {
-            throw "Malformed JSON provided to DistributionBuilder " + json;
-        }
-    } else if (json.BetaDistribution) {
-        if(json.BetaDistribution.alpha != null && json.BetaDistribution.beta != null) {
-            return new BetaDistribution(json.BetaDistribution.alpha[0], json.BetaDistribution.beta[0]);
-        } else {
-            throw "Malformed JSON provided to DistributionBuilder " + json;
-        }
-    } else if (json.GammaDistribution) {
-        if(json.GammaDistribution.shape != null && json.GammaDistribution.scale != null) {
-            return new GammaDistribution(json.GammaDistribution.shape[0], json.GammaDistribution.scale[0]);
-        } else {
-            throw "Malformed JSON provided to DistributionBuilder " + json;
-        }
-    } else if (json.StudentTDistribution) {
-        if(json.StudentTDistribution.degreesOfFreedom != null && json.StudentTDistribution.nonCentralityParameter != null) {
-            return new StudentTDistribution(json.StudentTDistribution.degreesOfFreedom[0], json.StudentTDistribution.nonCentralityParameter[0]);
-        } else if(json.StudentTDistribution.degreesOfFreedom != null) {
-            return new StudentTDistribution(json.StudentTDistribution.degreesOfFreedom[0]);
-        } else {
-            throw "Malformed JSON provided to DistributionBuilder " + json;
-        }
-    } else {
-        throw "Malformed JSON provided to DistributionBuilder " + json;
-    }
-}
+(function( jStat, Math ) {
 
-// é™³é¾èª å¢žåŠ çš„å‡½æ•¸
+var push = Array.prototype.push,
+	isArray = jStat.utils.isArray;
 
-jstat.Normal = function(mean, sd) {
-	return new NormalDistribution(mean, sd);
-}
+jStat.extend({
 
-jstat.LogNormal = function(meanlog, sdlog) {
-	return new LogNormalDistribution(meanlog, sdlog);
-}
+	// add a vector/matrix to a vector/matrix or scalar
+	add : function( arr, arg ) {
+		// check if arg is a vector or scalar
+		if ( isArray( arg )) {
+			if ( !isArray( arg[0] )) arg = [ arg ];
+			return jStat.map( arr, function( value, row, col ) { return value + arg[row][col]; });
+		}
+		return jStat.map( arr, function( value ) { return value + arg; });
+	},
 
-jstat.Beta = function(alpha, beta) {
-	return new BetaDistribution(alpha, beta);
-}
+	// subtract a vector or scalar from the vector
+	subtract : function( arr, arg ) {
+		// check if arg is a vector or scalar
+		if ( isArray( arg )) {
+			if ( !isArray( arg[0] )) arg = [ arg ];
+			return jStat.map( arr, function( value, row, col ) { return value - arg[row][col] || 0; });
+		}
+		return jStat.map( arr, function( value ) { return value - arg; });
+	},
 
-jstat.Gamma = function(shape, scale) {
-	return new GammaDistribution(shape, scale);
-}
+	// matrix division
+	divide : function( arr, arg ) {
+		if ( isArray( arg )) {
+			if ( !isArray( arg[0] )) arg = [ arg ];
+			return jStat.multiply( arr, jStat.inv( arg ));
+		}
+		return jStat.map( arr, function( value ) { return value / arg; });
+	},
 
-jstat.StudentT = function(degreesOfFreedom, mu) {
-	return new StudentTDistribution(mean, sd);
-}
+	// matrix multiplication
+	multiply : function( arr, arg ) {
+		var row, col, nrescols, sum,
+			nrow = arr.length,
+			ncol = arr[0].length,
+			res = jStat.zeros( nrow, nrescols = ( isArray( arg )) ? arg[0].length : ncol ),
+			rescols = 0;
+		if ( isArray( arg )) {
+			for ( ; rescols < nrescols; rescols++ ) {
+				for ( row = 0; row < nrow; row++ ) {
+					sum = 0;
+					for ( col = 0; col < ncol; col++ )
+						sum += arr[row][col] * arg[col][rescols];
+					res[row][rescols] = sum;
+				}
+			}
+			return ( nrow === 1 && rescols === 1 ) ? res[0][0] : res;
+		}
+		return jStat.map( arr, function( value ) { return value * arg; });
+	},
 
-module.exports = jstat;
+	// Returns the dot product of two matricies
+	dot : function( arr, arg ) {
+		if ( !isArray( arr[0] )) arr = [ arr ];
+		if ( !isArray( arg[0] )) arg = [ arg ];
+			// convert column to row vector
+		var left = ( arr[0].length === 1 && arr.length !== 1 ) ? jStat.transpose( arr ) : arr,
+			right = ( arg[0].length === 1 && arg.length !== 1 ) ? jStat.transpose( arg ) : arg,
+			res = [],
+			row = 0,
+			nrow = left.length,
+			ncol = left[0].length,
+			sum, col;
+		for ( ; row < nrow; row++ ) {
+			res[row] = [];
+			sum = 0;
+			for ( col = 0; col < ncol; col++ )
+				sum += left[row][col] * right[row][col];
+			res[row] = sum;
+		}
+		return ( res.length === 1 ) ? res[0] : res;
+	},
+
+	// raise every element by a scalar
+	pow : function( arr, arg ) {
+		return jStat.map( arr, function( value ) { return Math.pow( value, arg ); });
+	},
+
+	// generate the absolute values of the vector
+	abs : function( arr ) {
+		return jStat.map( arr, function( value ) { return Math.abs( value ); });
+	},
+
+	// TODO: make compatible with matrices
+	// computes the p-norm of the vector
+	norm : function( arr, p ) {
+		var nnorm = 0,
+			i = 0;
+		// check the p-value of the norm, and set for most common case
+		if ( isNaN( p )) p = 2;
+		// check if multi-dimensional array, and make vector correction
+		if ( isArray( arr[0] )) arr = arr[0];
+		// vector norm
+		for (; i < arr.length; i++ ) {
+			nnorm += Math.pow( Math.abs( arr[i] ), p );
+		}
+		return Math.pow( nnorm, 1 / p );
+	},
+
+	// TODO: make compatible with matrices
+	// computes the angle between two vectors in rads
+	angle : function( arr, arg ) {
+		return Math.acos( jStat.dot( arr, arg ) / ( jStat.norm( arr ) * jStat.norm( arg )));
+	},
+
+	// augment one matrix by another
+	aug : function( a, b ) {
+		var newarr = a.slice(),
+			i = 0;
+		for ( ; i < newarr.length; i++ ) {
+			push.apply( newarr[i], b[i] );
+		}
+		return newarr;
+	},
+
+	inv : function( a ) {
+		var rows = a.length,
+			cols = a[0].length,
+			b = jStat.identity( rows, cols ),
+			c = jStat.gauss_jordan( a, b ),
+			obj = [],
+			i = 0,
+			j;
+		for ( ; i < rows; i++ ) {
+			obj[i] = [];
+			for ( j = cols - 1; j < c[0].length; j++ )
+				obj[i][j - cols] = c[i][j];
+		}
+		return obj;
+	},
+
+	// calculate the determinant of a matrix
+	det : function( a ) {
+		var alen = a.length,
+			alend = alen * 2,
+			vals = new Array( alend ),
+			rowshift = alen - 1,
+			colshift = alend - 1,
+			mrow = rowshift - alen + 1,
+			mcol = colshift,
+			i = 0,
+			result = 0,
+			j;
+		// check for special 2x2 case
+		if ( alen === 2 ) {
+			return a[0][0] * a[1][1] - a[0][1] * a[1][0];
+		}
+		for (; i < alend; i++ ) {
+			vals[i] = 1;
+		}
+		for ( i = 0; i < alen; i++ ) {
+			for ( j = 0; j < alen; j++ ) {
+				vals[( mrow < 0 ) ? mrow + alen : mrow ] *= a[i][j];
+				vals[( mcol < alen ) ? mcol + alen : mcol ] *= a[i][j];
+				mrow++;
+				mcol--;
+			}
+			mrow = --rowshift - alen + 1;
+			mcol = --colshift;
+		}
+		for ( i = 0; i < alen; i++ ) {
+			result += vals[i];
+		}
+		for (; i < alend; i++ ) {
+			result -= vals[i];
+		}
+		return result;
+	},
+
+	gauss_elimination : function( a, b ) {
+		var i = 0,
+			j = 0,
+			n = a.length,
+			m = a[0].length,
+			factor = 1,
+			sum = 0,
+			x = [],
+			maug, pivot, temp, k;
+		a = jStat.aug( a, b );
+		maug = a[0].length;
+		for( ; i < n; i++ ) {
+			pivot = a[i][i];
+			j = i;
+			for ( k = i + 1; k < m; k++ ) {
+				if ( pivot < Math.abs( a[k][i] )) {
+					pivot = a[k][i];
+					j = k;
+				}
+			}
+			if ( j != i ) {
+				for( k = 0; k < maug; k++ ) {
+					temp = a[i][k];
+					a[i][k] = a[j][k];
+					a[j][k] = temp;
+				}
+			}
+			for ( j = i + 1; j < n; j++ ) {
+				factor = a[j][i] / a[i][i];
+				for( k = i; k < maug; k++) {
+					a[j][k] = a[j][k] - factor * a[i][k];
+				}
+			}
+		}
+		for ( i = n - 1; i >= 0; i-- ) {
+			sum = 0;
+			for ( j = i + 1; j<= n - 1; j++ ) {
+				sum = x[j] * a[i][j];
+			}
+			x[i] =( a[i][maug - 1] - sum ) / a[i][i];
+		}
+		return x;
+	},
+
+	gauss_jordan : function(a, b) {
+		var m = jStat.aug(a, b),
+			h = m.length,
+			w = m[0].length;
+		// find max pivot
+		for (var y = 0; y < h; y++) {
+			var maxrow = y;
+			for (var y2 = y+1; y2 < h; y2++) {
+				if (Math.abs(m[y2][y]) > Math.abs(m[maxrow][y]))
+					maxrow = y2;
+			}
+			var tmp = m[y];
+			m[y] = m[maxrow];
+			m[maxrow] = tmp
+			for (var y2 = y+1; y2 < h; y2++) {
+				c = m[y2][y] / m[y][y];
+				for (var x = y; x < w; x++) {
+					m[y2][x] -= m[y][x] * c;
+				}
+			}
+		}
+		// backsubstitute
+		for (var y = h-1; y >= 0; y--) {
+			c = m[y][y];
+			for (var y2 = 0; y2 < y; y2++) {
+				for (var x = w-1; x > y-1; x--) {
+					m[y2][x] -= m[y][x] * m[y2][y] / c;
+				}
+			}
+			m[y][y] /= c;
+			for (var x = h; x < w; x++) {
+				m[y][x] /= c;
+			}
+		}
+		return m;
+	},
+
+	lu : function( a, b ) {
+		//TODO
+	},
+
+	cholesky : function( a, b ) {
+		//TODO
+	},
+
+	gauss_jacobi : function( a, b, x, r ) {
+		var i = 0,
+			j = 0,
+			n = a.length,
+			l = [],
+			u = [],
+			d = [],
+			xv, c, h, xk;
+		for ( ; i < n; i++ ) {
+			l[i] = [];
+			u[i] = [];
+			d[i] = [];
+			for ( j = 0; j < n; j++ ) {
+				if ( i > j ) {
+					l[i][j] = a[i][j];
+					u[i][j] = d[i][j] = 0;
+				} else if ( i < j ) {
+					u[i][j] = a[i][j];
+					l[i][j] = d[i][j] = 0;
+				} else {
+					d[i][j] = a[i][j];
+					l[i][j] = u[i][j] = 0;
+				}
+			}
+		}
+		h = jStat.multiply( jStat.multiply( jStat.inv( d ), jStat.add( l, u )), -1 );
+		c = jStat.multiply( jStat.inv( d ), b );
+		xv = x;
+		xk = jStat.add( jStat.multiply( h, x ), c );
+		i = 2;
+		while ( Math.abs( jStat.norm( jStat.subtract( xk,xv ))) > r ) {
+			xv = xk;
+			xk = jStat.add( jStat.multiply( h, xv ), c );
+			i++;
+		}
+		return xk;
+	},
+
+	gauss_seidel : function( a, b, x, r ) {
+		var i = 0,
+			n = a.length,
+			l = [],
+			u = [],
+			d = [],
+			j, xv, c, h, xk;
+		for ( ; i < n; i++ ) {
+			l[i] = [];
+			u[i] = [];
+			d[i] = [];
+			for ( j = 0; j < n; j++) {
+				if ( i > j ) {
+					l[i][j] = a[i][j];
+					u[i][j] = d[i][j] = 0;
+				} else if ( i < j ) {
+					u[i][j] = a[i][j];
+					l[i][j] = d[i][j] = 0;
+				} else {
+					d[i][j] = a[i][j];
+					l[i][j] = u[i][j] = 0;
+				}
+			}
+		}
+		h = jStat.multiply( jStat.multiply( jStat.inv( jStat.add( d, l )), u ), -1 );
+		c = jStat.multiply( jStat.inv( jStat.add( d, l )), b );
+		xv = x;
+		xk = jStat.add( jStat.multiply( h, x ), c );
+		i = 2;
+		while ( Math.abs( jStat.norm( jStat.subtract( xk, xv ))) > r ) {
+			xv = xk;
+			xk = jStat.add( jStat.multiply( h, xv ), c );
+			i = i + 1;
+		}
+		return xk;
+	},
+
+	SOR : function( a, b, x, r, w ) {
+		var i = 0,
+			n = a.length,
+			l = [],
+			u = [],
+			d = [],
+			j, xv, c, h, xk;
+		for ( ; i < n; i++ ) {
+			l[i] = [];
+			u[i] = [];
+			d[i] = [];
+			for ( j = 0; j < n; j++ ) {
+				if ( i > j ) {
+					l[i][j] = a[i][j];
+					u[i][j] = d[i][j] = 0;
+				} else if ( i < j ) {
+					u[i][j] = a[i][j];
+					l[i][j] = d[i][j] = 0;
+				} else {
+					d[i][j] = a[i][j];
+					l[i][j] = u[i][j] = 0;
+				}
+			}
+		}
+		h = jStat.multiply( jStat.inv( jStat.add( d, jStat.multiply( l, w ))), jStat.subtract( jStat.multiply( d, 1 - w ), jStat.multiply( u, w )));
+		c = jStat.multiply( jStat.multiply( jStat.inv( jStat.add( d, jStat.multiply( l, w ))), b ), w );
+		xv = x;
+		xk = jStat.add( jStat.multiply( h, x ), c );
+		i = 2;
+		while ( Math.abs( jStat.norm( jStat.subtract( xk, xv ))) > r ) {
+			xv = xk;
+			xk = jStat.add( jStat.multiply( h, xv ), c );
+			i++;
+		}
+		return xk;
+	},
+
+	householder : function( a ) {
+		var m = a.length,
+			n = a[0].length,
+			i = 0,
+			w = [],
+			p = [],
+			alpha, r, k, j, factor;
+		for ( ; i < m - 1; i++ ) {
+			alpha = 0;
+			for ( j = i + 1; j < n; j++ )
+				alpha += ( a[j][i] * a[j][i] );
+			factor = ( a[i + 1][i] > 0 ) ? -1 : 1;
+			alpha = factor * Math.sqrt( alpha );
+			r = Math.sqrt(((( alpha * alpha ) - a[i + 1][i] * alpha ) / 2 ));
+			w = jStat.zeros( m, 1 );
+			w[i + 1][0] = ( a[i + 1][i] - alpha ) / ( 2 * r );
+			for ( k = i + 2; k < m; k++ ) w[k][0] = a[k][i] / ( 2 * r );
+			p = jStat.subtract( jStat.identity( m, n ), jStat.multiply( jStat.multiply(w, jStat.transpose( w )), 2 ));
+			a = jStat.multiply( p, jStat.multiply( a, p ));
+		}
+		return a;
+	},
+
+	// TODO: not working properly.
+	QR : function( a, b ) {
+		var m = a.length,
+			n = a[0].length,
+			i = 0,
+			w = [],
+			p = [],
+			x = [],
+			j, alpha, r, k, factor,sum;
+		for ( ; i < m - 1; i++ ) {
+			alpha = 0;
+			for ( j = i + 1; j < n; j++ )
+				alpha += ( a[j][i] * a[j][i] );
+			factor = ( a[i + 1][i] > 0 ) ? -1 : 1;
+			alpha = factor * Math.sqrt( alpha );
+			r = Math.sqrt(((( alpha * alpha ) - a[i + 1][i] * alpha ) / 2 ));
+			w = jStat.zeros( m, 1 );
+			w[i + 1][0] = ( a[i + 1][i] - alpha ) / ( 2 * r );
+			for ( k = i + 2; k < m; k++ ) w[k][0] = a[k][i] / ( 2 * r );
+			p = jStat.subtract( jStat.identity( m, n ), jStat.multiply( jStat.multiply( w, jStat.transpose( w )), 2));
+			a = jStat.multiply( p, a );
+			b = jStat.multiply( p, b );
+		}
+		for ( i = m - 1; i >= 0; i-- ) {
+			sum = 0;
+			for ( j = i + 1; j <= n - 1; j++ )
+				sum = x[j] * a[i][j];
+			x[i] = b[i][0] / a[i][i];
+		}
+		return x;
+	},
+
+	jacobi : function( a ) {
+		var condition = 1,
+			count = 0,
+			n = a.length,
+			e = jStat.identity( n, n ),
+			ev = [],
+			b, i, j, p, q, maxim, theta, s;
+		// condition === 1 only if tolerance is not reached
+		while ( condition === 1 ) {
+			count++;
+			maxim = a[0][1];
+			p = 0;
+			q = 1;
+			for ( i = 0; i < n; i++ ) {
+				for ( j = 0; j < n; j++ ) {
+					if ( i != j ) {
+						if ( maxim < Math.abs( a[i][j] )) {
+							maxim = Math.abs( a[i][j] );
+							p = i;
+							q = j;
+						}
+					}
+				}
+			}
+			if ( a[p][p] === a[q][q] )
+				theta = ( a[p][q] > 0 ) ? Math.PI / 4 : -Math.PI / 4;
+			else
+				theta = Math.atan( 2 * a[p][q] / ( a[p][p] - a[q][q] )) / 2;
+			s = jStat.identity( n, n );
+			s[p][p] = Math.cos( theta );
+			s[p][q] = -Math.sin( theta );
+			s[q][p] = Math.sin( theta );
+			s[q][q] = Math.cos( theta );
+			// eigen vector matrix
+			e = jStat.multiply( e, s );
+			b = jStat.multiply( jStat.multiply( jStat.inv( s ), a ), s );
+			a = b;
+			condition = 0;
+			for ( i = 1; i < n; i++ ) {
+				for ( j = 1; j < n; j++ ) {
+					if ( i != j && Math.abs( a[i][j]) > 0.001 ) {
+						condition = 1;
+					}
+				}
+			}
+		}
+		for( i = 0; i < n; i++ ) ev.push( a[i][i] );
+		//returns both the eigenvalue and eigenmatrix
+		return [e, ev];
+	},
+
+	rungekutta : function( f, h, p, t_j, u_j, order ) {
+		var k1, k2, u_j1, k3, k4;
+		if ( order === 2 ) {
+			while ( t_j <= p ) {
+				k1 = h * f( t_j, u_j );
+				k2 = h * f( t_j + h, u_j + k1 );
+				u_j1 = u_j + ( k1 + k2 ) / 2;
+				u_j = u_j1;
+				t_j = t_j + h;
+			}
+		}
+		if ( order === 4 ) {
+			while ( t_j <= p ) {
+				k1 = h * f( t_j, u_j);
+				k2 = h * f( t_j + h / 2, u_j + k1 / 2 );
+				k3 = h * f( t_j + h / 2, u_j + k2 / 2);
+				k4 = h * f( t_j +h, u_j + k3 );
+				u_j1 = u_j + ( k1 + 2 * k2 + 2 * k3 + k4 ) / 6;
+				u_j = u_j1;
+				t_j = t_j + h;
+			}
+		}
+		return u_j;
+	},
+
+	romberg : function( f, a, b, order ) {
+		var i = 0,
+			h = ( b - a ) / 2,
+			x = [],
+			h1 = [],
+			g = [],
+			m, a1, j, k, I, d;
+		while ( i < order / 2 ) {
+			I = f( a );
+			for ( j = a, k = 0; j <= b; j = j + h, k++ ) x[k] = j;
+			m = x.length;
+			for ( j = 1; j < m - 1; j++ ) {
+				I += ((( j % 2 ) !== 0 ) ? 4 : 2 ) * f( x[j] );
+			}
+			I = ( h / 3 ) * ( I + f( b ));
+			g[i] = I;
+			h /= 2;
+			i++;
+		}
+		a1 = g.length;
+		m = 1;
+		while ( a1 !== 1 ) {
+			for ( j = 0; j < a1 - 1; j++ )
+				h1[j] = (( Math.pow( 4, m )) * g[j + 1] - g[j] ) / ( Math.pow( 4, m ) - 1 );
+			a1 = h1.length;
+			g = h1;
+			h1 = [];
+			m++;
+		}
+		return g;
+	},
+
+	richardson : function( X, f, x, h ) {
+		function pos( X, x ) {
+			var i = 0,
+				n = X.length,
+				p;
+			for ( ; i < n; i++ )
+				if ( X[i] === x ) p = i;
+			return p;
+		}
+		var n = X.length,
+			h_min = Math.abs( x - X[pos( X, x ) + 1] ),
+			i = 0,
+			g = [],
+			h1 = [],
+			y1, y2, m, a, j;
+		while ( h >= h_min ) {
+			y1 = pos( X, x + h );
+			y2 = pos( X, x );
+			g[i] = ( f[y1] - 2 * f[y2] + f[2 * y2 - y1]) / ( h * h );
+			h /= 2;
+			i++;
+		}
+		a = g.length;
+		m = 1;
+		while ( a != 1 ) {
+			for ( j = 0; j < a - 1; j++ )
+				h1[j] = (( Math.pow( 4, m )) * g[j + 1] - g[j]) / ( Math.pow( 4, m ) - 1 );
+			a = h1.length;
+			g = h1;
+			h1 = [];
+			m++;
+		}
+		return g;
+	},
+
+	simpson : function( f, a, b, n ) {
+		var h = ( b - a ) / n,
+			I = f( a ),
+			x = [],
+			j = a,
+			k = 0,
+			i = 1,
+			m;
+		for ( ; j <= b; j = j + h, k++ )
+			x[k] = j;
+		m = x.length;
+		for ( ; i < m - 1; i++ ) {
+			I += (( i % 2 !== 0 ) ? 4 : 2 ) * f( x[i] );
+		}
+		return ( h / 3 ) * ( I + f( b ));
+	},
+
+	hermite : function( X, F, dF, value ) {
+		var n = X.length,
+			p = 0,
+			i = 0,
+			l = [],
+			dl = [],
+			A = [],
+			B = [],
+			j;
+		for ( ; i < n; i++) {
+			l[i] = 1;
+			for ( j = 0; j < n; j++ ) {
+				if ( i != j ) l[i] *= ( value - X[j] ) / ( X[i] - X[j] );
+			}
+			dl[i] = 0;
+			for ( j = 0; j < n; j++ ) {
+				if ( i != j ) dl[i] += 1 / (X [i] - X[j] );
+			}
+			A[i] = ( 1 - 2 * ( value - X[i] ) * dl[i] ) * ( l[i] * l[i] );
+			B[i] = ( value - X[i] ) * ( l[i] * l[i] );
+			p += ( A[i] * F[i] + B[i] * dF[i] );
+		}
+		return p;
+	},
+
+	lagrange : function( X, F, value ) {
+		var p = 0,
+			i = 0,
+			j, l,
+		n = X.length;
+		for ( ; i < n; i++ ) {
+			l = F[i];
+			for ( j = 0; j < n; j++ ) {
+				// calculating the lagrange polynomial L_i
+				if ( i != j ) l *= ( value - X[j] ) / ( X[i] - X[j] );
+			}
+			// adding the lagrange polynomials found above
+			p += l;
+		}
+		return p;
+	},
+
+	cubic_spline : function( X, F, value ) {
+		var n = X.length,
+			i = 0, j,
+			A = [],
+			B = [],
+			alpha = [],
+			c = [],
+			h = [],
+			b = [],
+			d = [];
+		for ( ; i < n - 1; i++ )
+			h[i] = X[i + 1] - X[i];
+		alpha[0] = 0;
+		for ( i = 1; i < n - 1; i++ )
+			alpha[i] = ( 3 / h[i] ) * ( F[i + 1] - F[i] ) - ( 3 / h[i-1] ) * ( F[i] - F[i-1] );
+		for ( i = 1; i < n - 1; i++ ) {
+			A[i] = [];
+			B[i] = [];
+			A[i][i-1] = h[i-1];
+			A[i][i] = 2 * ( h[i - 1] + h[i] );
+			A[i][i+1] = h[i];
+			B[i][0] = alpha[i];
+		}
+		c = jStat.multiply( jStat.inv( A ), B );
+		for ( j = 0; j < n - 1; j++ ) {
+			b[j] = ( F[j + 1] - F[j] ) / h[j] - h[j] * ( c[j + 1][0] + 2 * c[j][0] ) / 3;
+			d[j] = ( c[j + 1][0] - c[j][0] ) / ( 3 * h[j] );
+		}
+		for ( j = 0; j < n; j++ ) {
+			if ( X[j] > value ) break;
+		}
+		j -= 1;
+		return F[j] + ( value - X[j] ) * b[j] + jStat.sq( value-X[j] ) * c[j] + ( value - X[j] ) * jStat.sq( value - X[j] ) * d[j];
+	},
+
+	gauss_quadrature : function() {
+		//TODO
+	},
+
+	PCA : function( X ) {
+		var m = X.length,
+			n = X[0].length,
+			flag = false,
+			i = 0,
+			j, temp1,
+			u = [],
+			D = [],
+			result = [],
+			temp2 = [],
+			Y = [],
+			Bt = [],
+			B = [],
+			C = [],
+			V = [],
+			Vt = [];
+		for ( i = 0; i < m; i++ ) {
+			u[i] = jStat.sum( X[i] ) / n;
+		}
+		for ( i = 0; i < n; i++ ) {
+			B[i] = [];
+			for( j = 0; j < m; j++ ) {
+				B[i][j] = X[j][i] - u[j];
+			}
+		}
+		B = jStat.transpose( B );
+		for ( i = 0; i < m; i++ ) {
+			C[i] = [];
+			for ( j = 0; j < m; j++ ) {
+				C[i][j] = ( jStat.dot( [B[i]], [B[j]] )) / ( n - 1 );
+			}
+		}
+		result = jStat.jacobi( C );
+		V = result[0];
+		D = result[1];
+		Vt = jStat.transpose( V );
+		for ( i = 0; i < D.length; i++ ) {
+			for ( j = i; j < D.length; j++ ) {
+				if( D[i] < D[j] )  {
+					temp1 = D[i];
+					D[i] = D[j];
+					D[j] = temp1;
+					temp2 = Vt[i];
+					Vt[i] = Vt[j];
+					Vt[j] = temp2;
+				}
+			}
+		}
+		Bt = jStat.transpose( B );
+		for ( i = 0; i < m; i++ ) {
+			Y[i] = [];
+			for ( j = 0; j < Bt.length; j++ ) {
+				Y[i][j] = jStat.dot( [Vt[i]], [Bt[j]] );
+			}
+		}
+		return [X, D, Vt, Y];
+	}
+});
+
+// extend jStat.fn with methods that require one argument
+(function( funcs ) {
+	for ( var i = 0; i < funcs.length; i++ ) (function( passfunc ) {
+		jStat.fn[ passfunc ] = function( arg, func ) {
+			var tmpthis = this;
+			// check for callback
+			if ( func ) {
+				setTimeout( function() {
+					func.call( tmpthis, jStat.fn[ passfunc ].call( tmpthis, arg ));
+				}, 15 );
+				return this;
+			}
+			return jStat( jStat[ passfunc ]( this, arg ));
+		};
+	}( funcs[i] ));
+}( 'add divide multiply subtract dot pow abs norm angle'.split( ' ' )));
+
+}( this.jStat, Math ));
+
+// ³¯Áé¸Û¼W¥[ªº¨ç¼Æ
+
+module.exports = this.jStat;
