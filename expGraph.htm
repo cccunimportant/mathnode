@@ -69,8 +69,8 @@ function drawCurveList(target, codeList, from, to, step) {
   var c = new ExpCurve(from, to, step);
   $.plot($(target), c.curveList(codeList), {
         series: {
-            lines: { show: false },
-            points: { show: false },
+            lines: { show: true },
+            points: { show: true },
 			bars: { show: true, barWidth: step }
         }  
   });
