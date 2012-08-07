@@ -1,11 +1,26 @@
 ﻿var st=require("./jstat_ccc");
+var nu=require("./numeric");
 
 var log = console.log;
 
 var math = exports;
 
-var run = function(exp) {
-  log("> "+exp+"\n"+eval(exp)+"\n");
+var run=function(exp) {
+  console.log("> "+exp+"\n"+nu.prettyPrint(eval(exp))+"\n");
+}
+
+var str = nu.prettyPrint;
+
+var mat2str = function(m) {
+	var str="[";
+	for (var i=0; i<m.length; i++) {
+		str += (i==0?"[":" [");
+		for (var j=0; j<m[0].length-1; j++)
+			str += m[i][j]+",";
+		str += m[i][j]+"]\n";
+	}
+	str += "]";
+	return str;
 }
 
 log("========================Vector==================");
@@ -97,14 +112,59 @@ run("st(1,100,100,function( x ) { return [x,x]; }).quartiles()"); // === [[25,50
 run("seq = st.seq( 0, 10, 11 ); st.covariance( seq, seq )"); // === 11;
 run("seq = st.seq( 0, 10, 11 ); st.corrcoeff( seq, seq )"); // === 1;
 
-log("========================core==================");
-run("matrix = st([[ 1, 2, 3 ],[ 4, 5, 6 ],[ 7, 8, 9 ]]); matrix.toArray()");
+log("=================R style function==================");
+var nsample = function(n, exp) {
+	samples = [];
+	for (var i=0; i<n; i++)
+		samples[i] = eval(exp);
+	return samples;
+}
+
+log("======Uniform Distribution=======");
+var dunif = st.uniform.pdf;
+var punif = st.uniform.cdf;
+var qunif = st.uniform.inv;
+var runif = function(n,a,b) {
+	return nsample(n, "st.uniform.sample(a,b)");
+}
+
+run("a=0, b=10, runif(10,a,b)");
+
+log("======Normal Distribution=======");
+var dnorm = st.norm.pdf;
+var pnorm = st.norm.cdf;
+var qnorm = st.norm.inv;
+var rnorm = function(n,mean,sd) {
+	return nsample(n, "st.normal.sample(mean,sd)");
+}
+
+run("mean=5, sd=2, rnorm(10,mean,sd)");
+
+log("========================distribution==================");
+log("=== Binomial ===");
+run("k=3; n=10; p=0.7; x=st.binomial.pdf(k, n, p)");
+run("c=st.normal.cdf(x, n, p)");
+log("=== Uniform ===");
+run("x=3; a=0; b=10; p=st.uniform.pdf(x, a, b)");
+run("c=st.uniform.cdf(x, a, b)");
+run("sx=st.uniform.sample(a,b)");
+// run("rx=st.uniform.inv(c, a, b)"); // uniform.inv 沒定義
+log("=== Normal ===");
+run("x=3; mean=3; std=2; p=st.normal.pdf(x, mean, std)");
+run("c=st.normal.cdf(x, mean, std)");
+run("rx=st.normal.inv(c, mean, std)");
+run("sx=st.normal.sample(mean, std)");
+log("=== Beta ===");
+run("alpha=0.3; beta=0.5; st.beta.pdf( 0.1, alpha, beta )");
+
+/*
+run("matrix = st([[ 1, 2, 3 ],[ 4, 5, 6 ],[ 7, 8, 9 ]]); str(matrix)");
 run("stat1 = st([[ 1, 2 ],[ 3, 4 ]]), stat2 = st( stat1 );");
 run("st([[ 1, 2 ],[ 3, 4 ]], function( x ) {  return x * 2; })");
 run("vector = st( 0, 1, 5 )");
 run("vector = st( 0, 1, 5, function( x ) { return x * 2; })");
 run("alpha=0.3; beta=0.5; betaGraph = st( 0, 1, 11, function( x, cnt ) { return [ st.beta.pdf( x, alpha, beta ), cnt ] })");
-run("st( st.rand( 3 ))");
+run("st.rand( 3 ))");
 run("st().rand( 3 )");
 run("matrix = [[1,2,3],[4,5,6]]");
 run("st.rows( matrix )"); // === 2;
@@ -114,7 +174,8 @@ run("st( matrix ).rows()"); // === 2;
 run("st.dimensions( matrix )"); // === { cols: 3, rows: 2 };
 run("st.row( matrix, 0 )"); // === [1,2,3];
 run("st.col( matrix, 0 )"); // === [[1],[3]];
-/*
+
+
     jStat( matrix ).col( 0 ) === jStat([[1],[3]]);
     var matrix = [[1,2,3],[4,5,6],[7,8,9]];
     jStat.diag( matrix ) === [[1],[5],[9]];
