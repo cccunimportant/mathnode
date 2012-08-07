@@ -15,5 +15,7 @@ Related Project
 1. node.js -- The testing platform
 2. jStat -- jStat.js (modify by ccc to jStat_ccc.js)
 3. numericjs -- numeric.js
+4. jQuery -- http://jquery.com/
+5. flot -- http://code.google.com/p/flot/
 
 
