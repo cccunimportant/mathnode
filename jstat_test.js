@@ -112,6 +112,11 @@ run("st(1,100,100,function( x ) { return [x,x]; }).quartiles()"); // === [[25,50
 run("seq = st.seq( 0, 10, 11 ); st.covariance( seq, seq )"); // === 11;
 run("seq = st.seq( 0, 10, 11 ); st.corrcoeff( seq, seq )"); // === 1;
 
+log("================ jStat usage ==============");
+run("vector = st( 0, 1, 5 )");
+run("vector = st( 0, 1, 5, function( x ) { return x * 2; })");
+run("alpha=0.3; beta=0.5; betaGraph = st( 0, 1, 11, function( x, cnt ) { return [ st.beta.pdf( x, alpha, beta ), cnt ]; })");
+
 log("=================R style function==================");
 var nsample = function(n, exp) {
 	samples = [];
